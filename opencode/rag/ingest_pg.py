@@ -1,205 +1,124 @@
-#!/usr/bin/env python3
 """
-Supabase pgvector 知识库录入 — 线上向量存储
-
-替换本地 ChromaDB，全部数据存在 Supabase 云端。
-用法:
-  python ingest_pg.py          # 全量重新录入
-  python ingest_pg.py --incr   # 增量更新
+知识库导入 Supabase — 纯 Python 内置库 + numpy
 """
-import os
-import sys
-import yaml
-import click
-import hashlib
+import os, sys, json, hashlib, urllib.request, urllib.error, re
 from pathlib import Path
-from datetime import datetime
-from typing import List, Dict
+import numpy as np
 
-# Supabase 客户端
-from supabase import create_client
-from langchain_text_splitters import MarkdownHeaderTextSplitter
+SUPABASE_URL = "https://yqqrzyctdhxsppqanxnk.supabase.co"
+SUPABASE_KEY = "sb_secret_FxuHoUspeW340HQBUkgA-A_sNi57gz3"
+TABLE = "knowledge_vectors"
+DIM = 384  # 向量维度
 
+def supabase_api(method, path, body=None):
+    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    headers = {
+        "apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json", "Prefer": "return=representation"
+    }
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        if e.code == 409:
+            return {}
+        print(f"  API错误 [{e.code}]: {body[:150]}")
+        return None
 
-class SupabaseIngestor:
-    def __init__(self, config_path: str):
-        self.config = self._load_config(config_path)
+def embed_text(text, dim=DIM):
+    """轻量向量化: 字符ngram哈希 → 单位向量"""
+    vec = np.zeros(dim)
+    # 1-3 gram 字符哈希
+    for n in range(1, 4):
+        for i in range(len(text) - n + 1):
+            h = hash(text[i:i+n]) % dim
+            vec[h] += 1
+    # 归一化
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec.tolist()
 
-        sc = self.config["supabase"]
-        self.client = create_client(sc["url"], sc["anon_key"])
-        self.collection = sc["table_name"]
-        self.embedding_provider = sc.get("embedding_provider", "openai")
-
-        # 初始化 embedding API
-        if self.embedding_provider == "openai":
-            from openai import OpenAI
-            ak = os.environ.get("OPENAI_API_KEY") or sc.get("openai_api_key", "")
-            self.embed_client = OpenAI(api_key=ak)
-            self.embed_model = "text-embedding-3-small"
+def simple_chunk(text, size=600):
+    """按段落+长度分块"""
+    paragraphs = text.split("\n\n")
+    chunks, current = [], ""
+    for p in paragraphs:
+        if len(current) + len(p) < size:
+            current += p + "\n\n"
         else:
-            # 本地 SentenceTransformer 作为备用
-            from sentence_transformers import SentenceTransformer
-            self.embed_client = SentenceTransformer(
-                self.config["embedding"]["model_name"],
-                device="cpu"
-            )
-            self.embed_model = None
+            if current.strip(): chunks.append(current.strip())
+            current = p + "\n\n"
+    if current.strip(): chunks.append(current.strip())
+    return chunks
 
-        self.splitter = MarkdownHeaderTextSplitter(
-            headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
-            strip_headers=False
-        )
+# === 读取 .env ===
+env_path = Path(os.path.expanduser("~/Desktop/ai-auto-study/.env"))
+if env_path.exists():
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"'))
 
-        self._init_table()
+# === 主流程 ===
+base = Path(os.path.expanduser("~/.config/opencode/knowledge"))
+files = list(base.rglob("*.md"))
+print(f"文件数: {len(files)}, 向量维度: {DIM}")
 
-    def _load_config(self, config_path: str) -> Dict:
-        with open(config_path) as f:
-            return yaml.safe_load(f)
+# 清空
+supabase_api("DELETE", f"{TABLE}?id=neq.__keep__")
+print("旧数据已清空")
 
-    def _init_table(self):
-        """创建 pgvector 表 + 索引"""
-        sql = f"""
-        CREATE EXTENSION IF NOT EXISTS vector;
-        CREATE TABLE IF NOT EXISTS {self.collection} (
-            id TEXT PRIMARY KEY,
-            source_file TEXT,
-            source_filename TEXT,
-            chunk_index INTEGER,
-            level TEXT,
-            category TEXT,
-            content TEXT,
-            embedding vector(1536),
-            file_hash TEXT,
-            ingested_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        """
-        self.client.rpc("exec_sql", {"query": sql}).execute()
+total = 0
+for md_file in sorted(files):
+    try:
+        content = md_file.read_text(encoding="utf-8")
+    except:
+        continue
 
-        # IVFFlat 索引（数据量上千后生效）
-        idx_sql = f"""
-        CREATE INDEX IF NOT EXISTS idx_{self.collection}_embedding
-        ON {self.collection} USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-        """
-        self.client.rpc("exec_sql", {"query": idx_sql}).execute()
+    chunks = simple_chunk(content)
+    fhash = hashlib.md5(content.encode()).hexdigest()
+    path_str = str(md_file)
 
-    def _embed(self, texts: List[str]) -> List[List[float]]:
-        """批量向量化"""
-        if self.embedding_provider == "openai":
-            resp = self.embed_client.embeddings.create(
-                model=self.embed_model,
-                input=[t[:8000] for t in texts]
-            )
-            return [d.embedding for d in resp.data]
-        else:
-            return self.embed_client.encode(texts).tolist()
+    level = ""
+    if "/L1-" in path_str: level = "L1"
+    elif "/L2-" in path_str: level = "L2"
+    elif "/L3-" in path_str: level = "L3"
 
-    def _file_hash(self, filepath: str) -> str:
-        with open(filepath, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()
+    cat = "unknown"
+    if "/patterns/" in path_str: cat = "pattern"
+    elif "/services/" in path_str: cat = "service"
+    elif md_file.name.startswith("K") or md_file.name.startswith("N"): cat = "fix"
 
-    def _find_md_files(self) -> List[Path]:
-        files = []
-        for source in self.config["knowledge_sources"]:
-            base = Path(source["path"]).expanduser()
-            if not base.exists():
-                print(f"WARNING: 路径不存在 {base}")
-                continue
-            for md_file in base.rglob(source.get("glob", "*.md")):
-                if md_file.is_file():
-                    files.append(md_file)
-        return sorted(files)
+    valid = [c for c in chunks if len(c.strip()) >= 50]
+    if not valid:
+        continue
 
-    def _derive_level(self, path: str) -> str:
-        if "/L1-" in path: return "L1"
-        if "/L2-" in path: return "L2"
-        if "/L3-" in path: return "L3"
-        return ""
+    rows = []
+    for i, chunk in enumerate(valid):
+        rows.append({
+            "id": f"{md_file.name}:{i}",
+            "source_file": str(md_file),
+            "source_filename": md_file.name,
+            "chunk_index": i,
+            "level": level,
+            "category": cat,
+            "content": chunk,
+            "embedding": embed_text(chunk),
+            "file_hash": fhash,
+        })
 
-    def _derive_category(self, path: str, filename: str) -> str:
-        if "/patterns/" in path: return "pattern"
-        if "/services/" in path: return "service"
-        if filename.startswith("K") or filename.startswith("N"): return "fix"
-        if filename == "index.md": return "index"
-        return "unknown"
+    # 批量插入 20 条
+    for i in range(0, len(rows), 20):
+        supabase_api("POST", TABLE, rows[i:i+20])
 
-    def ingest_all(self) -> int:
-        md_files = self._find_md_files()
-        print(f"找到 {len(md_files)} 个 Markdown 文件")
+    total += len(rows)
+    rel = str(md_file.relative_to(Path.home()))
+    print(f"  [{total}] {rel} ({len(rows)}条)")
 
-        # 清空旧数据
-        self.client.table(self.collection).delete().neq("id", "__keep__").execute()
-
-        all_rows = []
-        for md_file in md_files:
-            rel = str(md_file.relative_to(Path.home()))
-            print(f"  处理: {rel}")
-            content = md_file.read_text(encoding="utf-8")
-
-            try:
-                chunks = self.splitter.split_text(content)
-            except Exception:
-                chunks = []
-
-            if not chunks:
-                txt = content.strip()
-                if len(txt) >= self.config["chunking"]["min_chunk_size"]:
-                    chunks = [type("c", (), {"page_content": txt, "metadata": {}})()]
-
-            level = self._derive_level(str(md_file))
-            category = self._derive_category(str(md_file), md_file.name)
-            fhash = self._file_hash(str(md_file))
-
-            batch_texts = []
-            batch_meta = []
-            for i, chunk in enumerate(chunks):
-                text = chunk.page_content.strip()
-                if len(text) < self.config["chunking"]["min_chunk_size"]:
-                    continue
-                batch_texts.append(text)
-                batch_meta.append({
-                    "id": f"{md_file.name}:{i}",
-                    "source_file": str(md_file),
-                    "source_filename": md_file.name,
-                    "chunk_index": i,
-                    "level": level,
-                    "category": category,
-                    "content": text,
-                    "file_hash": fhash,
-                })
-
-            # 批量向量化 + 插入
-            if batch_texts:
-                embeddings = self._embed(batch_texts)
-                rows = []
-                for meta, emb in zip(batch_meta, embeddings):
-                    meta["embedding"] = emb
-                    rows.append(meta)
-
-                for i in range(0, len(rows), 50):
-                    batch = rows[i:i+50]
-                    self.client.table(self.collection).upsert(batch).execute()
-
-                all_rows.extend(rows)
-                print(f"    → {len(rows)} 条已入库")
-
-        total = len(all_rows)
-        print(f"\n完成! Supabase 共 {total} 条向量记录")
-        return total
-
-
-@click.command()
-@click.option("--config", default=None)
-def main(config):
-    if config is None:
-        config = os.path.expanduser("~/.config/opencode/rag/rag_config.yaml")
-
-    if not os.path.exists(config):
-        print(f"错误: 配置文件不存在 {config}")
-        sys.exit(1)
-
-    i = SupabaseIngestor(config)
-    i.ingest_all()
-
-
-if __name__ == "__main__":
-    main()
+print(f"\n=== 导入完成! Supabase 共 {total} 条 ===")

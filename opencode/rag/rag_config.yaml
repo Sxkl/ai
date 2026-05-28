@@ -3,7 +3,7 @@ version: "2.0"
 # === 线上模式 (Supabase pgvector) ===
 supabase:
   url: "https://yqqrzyctdhxsppqanxnk.supabase.co"
-  anon_key: "sb_secret_FxuHoUspeW340HQBUkgA-A_sNi57gz3"
+  anon_key: "sb_publishable_GgCZCwMKkT4ZTRxWoZfUQg_PJsY54X1"
   table_name: "knowledge_vectors"
   embedding_provider: "openai"         # openai | local
   openai_api_key: ""                   # 用 Nebius API key，兼容 OpenAI 格式
