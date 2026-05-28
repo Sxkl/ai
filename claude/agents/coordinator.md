@@ -615,6 +615,7 @@ Mode: dry_run"
 | `sls-log-analysis` | 日志梳理、log analysis、全级别扫描、SLS分析 | `skills/sls-log-analysis/skill-dag.json` |
 | `standard-requirement-dev-prep` | 开发、需求、P4、任务、PR- | `skills/standard-requirement-dev-prep/SKILL.md` |
 | `harness-fullstack-dev` | 全栈开发、前后端、Harness DAG、架构分析、方案设计 | `dev-harness` agent (DAG) |
+| `prd-to-verified` | PRD开发、标准流程、从PRD开始、全流程DAG | `skills/prd-to-verified/skill-dag.json` + `prd-to-verified-coordinator` |
 
 ### 状态文件位置
 

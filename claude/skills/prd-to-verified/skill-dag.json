@@ -1,78 +1,278 @@
 {
-  "$schema": "https://opencode.ai/skill-dag.schema.json",
+  "$schema": "../skill-dsl-schema.yaml",
   "skill": "prd-to-verified",
   "version": "1.0.0",
-  "description": "PRD → 验证通过 标准开发 DAG。13 层 25 步，支持并行执行、进度追踪、质量门禁、反馈循环。",
-  
+  "description": "PRD → 验证通过 标准开发DAG。13层25步，架构借鉴 Stargate SkillOrchestrator。",
+
   "input_schema": {
     "type": "object",
     "required": ["requirement"],
     "properties": {
       "requirement": { "type": "string", "description": "需求描述或 Jira PR 编号" },
-      "jira_key": { "type": "string", "description": "Jira PR 编号 (如 PR-6312)" },
-      "service": { "type": "string", "description": "目标服务名 (可选，自动发现)" },
-      "frontend_project": { "type": "string", "default": "cube-new", "description": "前端项目路径" },
-      "mode": { "type": "string", "enum": ["full", "backend_only", "frontend_only"], "default": "full" }
+      "jira_key": { "type": "string", "description": "Jira PR 编号" },
+      "service": { "type": "string", "description": "目标服务名 (可选)" },
+      "mode": { "type": "string", "enum": ["full", "backend_only"], "default": "full" }
     }
   },
 
   "governance": {
     "timeout_seconds": 3600,
     "max_concurrent_steps": 4,
-    "quality_threshold": 7,
-    "max_revision_rounds": 3
+    "budget_usd": 5.00
   },
 
   "steps": [
-    { "id": "ai_chat",     "name": "① AI Chat 需求采集",      "type": "llm", "agent": "ai-chat",     "layer": 0, "depends_on": [] },
-    { "id": "brewer",      "name": "② Brewer PRD 生成",       "type": "llm", "agent": "brewer",      "layer": 1, "depends_on": ["ai_chat"] },
-    
-    { "id": "distiller",   "name": "③ Distiller 需求提取",    "type": "llm", "agent": "distiller",   "layer": 2, "depends_on": ["brewer"] },
-    { "id": "arch_analyze","name": "③ Architecture 架构分析", "type": "llm", "agent": "architecture-analyzer", "layer": 2, "depends_on": ["brewer"] },
-    { "id": "kb_scan",     "name": "③ Knowledge Base 扫描",   "type": "llm", "agent": "analyze-agent","layer": 2, "depends_on": ["brewer"] },
-    
-    { "id": "fe_trace",    "name": "④ Frontend 调用链追踪",   "type": "llm", "agent": "frontend-tracer","layer": 3, "depends_on": ["distiller"], "when": "input.mode != 'backend_only'" },
-    { "id": "be_search",   "name": "④ Backend 接口搜索",      "type": "llm", "agent": "requirement-analyzer", "layer": 3, "depends_on": ["distiller", "arch_analyze"] },
-    
-    { "id": "code_design", "name": "⑤ Code Designer 方案设计", "type": "llm", "agent": "code-designer","layer": 4, "depends_on": ["fe_trace", "be_search", "kb_scan"] },
-    
-    { "id": "design_review","name": "⑥ Design Review 方案评审", "type": "gate", "agent": "review-agent", "layer": 5, "depends_on": ["code_design"], "gate_threshold": 7, "max_retry": 2, "on_fail": "return_to_design" },
-    
-    { "id": "taster",      "name": "⑦ Taster 测试计划",       "type": "llm", "agent": "taster",      "layer": 6, "depends_on": ["design_review"] },
-    
-    { "id": "data_layer",  "name": "⑧ Data Layer 数据层",     "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"] },
-    { "id": "api_layer",   "name": "⑧ API Layer 接口层",      "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"] },
-    { "id": "biz_layer",   "name": "⑧ Biz Layer 业务层",      "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"] },
-    { "id": "fe_code",     "name": "⑧ Frontend 前端代码",     "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"], "when": "input.mode != 'backend_only'" },
-    
-    { "id": "lint",        "name": "⑨ Lint 检查",            "type": "tool", "agent": "auto-eval",  "layer": 8, "depends_on": ["data_layer", "api_layer", "biz_layer", "fe_code"] },
-    { "id": "typecheck",   "name": "⑨ TypeCheck 类型检查",   "type": "tool", "agent": "auto-eval",  "layer": 8, "depends_on": ["data_layer", "api_layer", "biz_layer", "fe_code"] },
-    { "id": "unit_test",   "name": "⑨ Unit Test 单元测试",   "type": "tool", "agent": "test-agent", "layer": 8, "depends_on": ["data_layer", "api_layer", "biz_layer", "fe_code"] },
-    
-    { "id": "crossfire_r1","name": "⑩ R1 PRD 合规审查",      "type": "llm", "agent": "crossfire",   "layer": 9, "depends_on": ["lint", "typecheck", "unit_test"] },
-    { "id": "crossfire_r2","name": "⑩ R2 架构安全审查",      "type": "llm", "agent": "crossfire",   "layer": 9, "depends_on": ["lint", "typecheck", "unit_test"] },
-    { "id": "crossfire_r3","name": "⑩ R3 生产就绪审查",      "type": "llm", "agent": "crossfire",   "layer": 9, "depends_on": ["lint", "typecheck", "unit_test"] },
-    
-    { "id": "quality_gate","name": "⑪ Quality Gate 质量关",   "type": "gate", "agent": "prd-to-verified-coordinator", "layer": 10, "depends_on": ["crossfire_r1", "crossfire_r2", "crossfire_r3"], "gate_threshold": 7, "max_retry": 3, "on_fail": "return_to_impl" },
-    
-    { "id": "git_mr",      "name": "⑫ Git Commit + MR 创建",  "type": "tool", "agent": "deploy-agent","layer": 11, "depends_on": ["quality_gate"] },
-    
-    { "id": "jira_update", "name": "⑫ Jira 回填",            "type": "tool", "agent": "jira-agent", "layer": 11, "depends_on": ["git_mr"] },
-    
-    { "id": "nebula",      "name": "⑬ Nebula 知识沉淀",      "type": "llm", "agent": "nebula",      "layer": 12, "depends_on": ["jira_update"] },
-    
-    { "id": "verify",      "name": "⑬ Final Verify 最终验证", "type": "gate", "agent": "prd-to-verified-coordinator", "layer": 12, "depends_on": ["nebula"] }
-  ],
-
-  "progress_tracking": {
-    "enabled": true,
-    "format": "layer_progress",
-    "report_interval": "per_step",
-    "display": {
-      "show_progress_bar": true,
-      "show_step_status": true,
-      "show_duration": true,
-      "show_agent_output_summary": true
+    {
+      "id": "ai_chat",
+      "name": "① AI Chat 需求采集",
+      "type": "llm_call",
+      "depends_on": [],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 AI Chat 需求采集 Agent。通过结构化对话从用户采集完整需求信息。",
+      "prompt": "采集需求: ${input.requirement}。输出格式: { goal, users, scenarios, constraints, mvp, nice_to_have } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "requirement_raw"
+    },
+    {
+      "id": "brewer",
+      "name": "② Brewer PRD 生成",
+      "type": "llm_call",
+      "depends_on": ["ai_chat"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Brewer PRD 生成 Agent。将需求原料酿造成结构化 PRD。",
+      "prompt": "基于需求原料生成 PRD: \n${steps.ai_chat.output}。\n输出格式: { title, sections: { overview, features, non_functional, constraints, timeline, risks }, acceptance_criteria: [], completeness_score } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "prd"
+    },
+    {
+      "id": "distiller",
+      "name": "③ Distiller 需求提取",
+      "type": "llm_call",
+      "depends_on": ["brewer"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Distiller 需求提取 Agent。从 PRD 蒸馏技术规格。",
+      "prompt": "从 PRD 提取技术规格: \n${steps.brewer.output}。\n输出: { apis: [], entities: [], modules: [], constraints: {}, coverage: {} } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "dev_spec"
+    },
+    {
+      "id": "arch_analyze",
+      "name": "③ Architecture 架构分析",
+      "type": "sub_skill",
+      "depends_on": ["brewer"],
+      "skill_slug": "architecture-analyzer",
+      "input_mapping": { "service": "${input.service}", "prd": "${steps.brewer.output}" },
+      "output_key": "arch_constraints"
+    },
+    {
+      "id": "kb_scan",
+      "name": "③ Knowledge Base 扫描",
+      "type": "llm_call",
+      "depends_on": ["brewer"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Knowledge Base 扫描 Agent。匹配已知模式和服务。",
+      "prompt": "扫描知识库，匹配与以下 PRD 相关的已知模式: \n${steps.brewer.output}。\n知识库路径: ~/.config/opencode/knowledge/。\n输出: { pattern_hits: [], known_traps: [], service_matches: [] } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "kb_hits"
+    },
+    {
+      "id": "fe_trace",
+      "name": "④ Frontend 调用链追踪",
+      "type": "llm_call",
+      "depends_on": ["distiller"],
+      "when": "${input.mode} != 'backend_only'",
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Frontend Tracer。追踪 UI 到 API 的调用链。",
+      "prompt": "基于 Distiller 的 API 列表: \n${steps.distiller.output}。\n在前端项目中搜索对应的 UI 组件和 API 调用。\n输出: { ui_elements: [], api_contracts: [], gateway_config: {} } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "fe_trace_result"
+    },
+    {
+      "id": "be_search",
+      "name": "④ Backend 接口搜索",
+      "type": "llm_call",
+      "depends_on": ["distiller", "arch_analyze"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Backend 接口搜索 Agent。定位后端代码。",
+      "prompt": "基于 Distiller 规格: \n${steps.distiller.output}。\n架构约束: \n${steps.arch_analyze.output}。\n搜索后端 Controllers 和 Services。\n输出: { found_apis: [], modules_to_create: [], modules_to_modify: [] } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "be_search_result"
+    },
+    {
+      "id": "code_design",
+      "name": "⑤ Code Designer 方案设计",
+      "type": "llm_call",
+      "depends_on": ["fe_trace", "be_search", "kb_scan"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Code Designer。综合所有输入生成实现方案。",
+      "prompt": "设计实现方案:\n- 技术规格: ${steps.distiller.output}\n- 前端追踪: ${steps.fe_trace.output}\n- 后端搜索: ${steps.be_search.output}\n- 知识库: ${steps.kb_scan.output}\n- 架构约束: ${steps.arch_analyze.output}\n\n输出: { design_summary, implementation_plan: { files_to_create, files_to_modify }, complexity_analysis, data_flow, architecture_compliance } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "design"
+    },
+    {
+      "id": "design_review",
+      "name": "⑥ Design Review 方案评审",
+      "type": "gate",
+      "depends_on": ["code_design"],
+      "gate_type": "auto_score",
+      "gate_threshold": 7,
+      "max_retry": 2,
+      "on_fail": "return_to_step",
+      "fail_target_step": "code_design",
+      "review_model": "anthropic/claude-sonnet-4-6",
+      "review_prompt": "评审以下设计方案:\n${steps.code_design.output}。\n评估维度: 架构合规(25%), 复杂度可控(25%), 边界覆盖(20%), 测试策略(15%), 可维护性(15%)。\n输出: { score, feedback, approved: score >= 7 } 的 JSON。",
+      "output_key": "design_review_result"
+    },
+    {
+      "id": "taster",
+      "name": "⑦ Taster 测试计划",
+      "type": "llm_call",
+      "depends_on": ["design_review"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Taster 测试计划 Agent。测试先行，测试是合约。",
+      "prompt": "基于设计规格和 PRD，生成测试计划:\n- 设计: ${steps.code_design.output}\n- PRD: ${steps.brewer.output}\n\n输出: { test_plan: { total_cases, cases: [{ id, type, ac_ref, name, given, when, then }] }, coverage_matrix, test_first_contract } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "test_plan"
+    },
+    {
+      "id": "data_layer",
+      "name": "⑧ Data Layer 数据层",
+      "type": "llm_call",
+      "depends_on": ["taster"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "prompt": "生成数据层代码 (Entity + Mapper + DDL):\n- 设计: ${steps.code_design.output}\n- 测试: ${steps.taster.output}\n- 架构约束: ${steps.arch_analyze.output}",
+      "output_key": "data_code"
+    },
+    {
+      "id": "api_layer",
+      "name": "⑧ API Layer 接口层",
+      "type": "llm_call",
+      "depends_on": ["taster"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "prompt": "生成接口层代码 (Controller + DTO):\n- 设计: ${steps.code_design.output}\n- 测试: ${steps.taster.output}",
+      "output_key": "api_code"
+    },
+    {
+      "id": "biz_layer",
+      "name": "⑧ Biz Layer 业务层",
+      "type": "llm_call",
+      "depends_on": ["taster"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "prompt": "生成业务层代码 (Service + MQ + Cache):\n- 设计: ${steps.code_design.output}\n- 测试: ${steps.taster.output}\n- 架构约束: ${steps.arch_analyze.output}",
+      "output_key": "biz_code"
+    },
+    {
+      "id": "lint",
+      "name": "⑨ Lint 检查",
+      "type": "custom",
+      "depends_on": ["data_layer", "api_layer", "biz_layer"],
+      "function": "run_lint",
+      "output_key": "lint_result"
+    },
+    {
+      "id": "typecheck",
+      "name": "⑨ TypeCheck 类型检查",
+      "type": "custom",
+      "depends_on": ["data_layer", "api_layer", "biz_layer"],
+      "function": "run_typecheck",
+      "output_key": "typecheck_result"
+    },
+    {
+      "id": "unit_test",
+      "name": "⑨ Unit Test 单元测试执行",
+      "type": "custom",
+      "depends_on": ["data_layer", "api_layer", "biz_layer"],
+      "function": "run_tests",
+      "output_key": "test_result"
+    },
+    {
+      "id": "crossfire_r1",
+      "name": "⑩ R1 PRD 合规审查",
+      "type": "llm_call",
+      "depends_on": ["lint", "typecheck", "unit_test"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 PRD 合规审查员。检查代码是否完整实现了 PRD 的每个 AC。",
+      "prompt": "PRD:\n${steps.brewer.output}\n\n设计:\n${steps.code_design.output}\n\n逐条 AC 检查实现完整性。\n输出: { ac_checklist: [{ ac, passed, gap }], score, gaps: [] } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "r1_result"
+    },
+    {
+      "id": "crossfire_r2",
+      "name": "⑩ R2 架构安全审查",
+      "type": "llm_call",
+      "depends_on": ["lint", "typecheck", "unit_test"],
+      "model": "deepseek/deepseek-v4-pro-max",
+      "system": "你是架构安全审查员。检查代码是否符合架构约束。",
+      "prompt": "架构约束:\n${steps.arch_analyze.output}\n\n检查: 多数据源、Redis锁、MQ幂等、Feign防护、DB索引。\n输出: { checks: [], score, must_fix: [], should_fix: [] } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "r2_result"
+    },
+    {
+      "id": "crossfire_r3",
+      "name": "⑩ R3 生产就绪审查",
+      "type": "llm_call",
+      "depends_on": ["lint", "typecheck", "unit_test"],
+      "model": "moonshotai/kimi-k2.6",
+      "system": "你是 SRE 生产就绪审查员。检查上线风险。",
+      "prompt": "检查: 异常处理、日志、监控、回滚、兼容性、边界输入。\n输出: { checks: [], score, risks: [] } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "r3_result"
+    },
+    {
+      "id": "quality_gate",
+      "name": "⑪ Quality Gate 质量关",
+      "type": "gate",
+      "depends_on": ["crossfire_r1", "crossfire_r2", "crossfire_r3"],
+      "gate_type": "auto_score",
+      "gate_threshold": 7,
+      "max_retry": 3,
+      "on_fail": "return_to_step",
+      "fail_target_step": "data_layer",
+      "score_formula": "(${steps.crossfire_r1.output.score} * 0.35 + ${steps.crossfire_r2.output.score} * 0.35 + ${steps.crossfire_r3.output.score} * 0.30)",
+      "output_key": "quality_gate_result"
+    },
+    {
+      "id": "git_mr",
+      "name": "⑫ Git Commit + MR 创建",
+      "type": "custom",
+      "depends_on": ["quality_gate"],
+      "function": "git_commit_and_mr",
+      "output_key": "mr_info"
+    },
+    {
+      "id": "jira_update",
+      "name": "⑫ Jira 回填",
+      "type": "custom",
+      "depends_on": ["git_mr"],
+      "function": "jira_backfill",
+      "output_key": "jira_result"
+    },
+    {
+      "id": "nebula",
+      "name": "⑬ Nebula 知识沉淀",
+      "type": "llm_call",
+      "depends_on": ["jira_update"],
+      "model": "anthropic/claude-sonnet-4-6",
+      "system": "你是 Nebula 知识沉淀 Agent。将本次开发经验沉淀为可复用知识。",
+      "prompt": "沉淀知识:\n- 测试: ${steps.taster.output}\n- 设计: ${steps.code_design.output}\n- 审查: ${steps.crossfire_r1.output}, ${steps.crossfire_r2.output}\n- 缺陷: 从 quality_gate 提取\n\n输出: { new_patterns: [], new_rules: [], templates: [], feedback_to_next_cycle: [] } 的 JSON。",
+      "response_format": "json_object",
+      "output_key": "nebula_knowledge"
+    },
+    {
+      "id": "verify",
+      "name": "⑬ Final Verify 最终验证",
+      "type": "gate",
+      "depends_on": ["nebula"],
+      "gate_type": "auto_check",
+      "check_items": [
+        "PRD 所有 AC 通过",
+        "所有测试通过",
+        "Review 分数 >= 7",
+        "MR 已创建",
+        "Jira 已更新",
+        "知识已沉淀"
+      ],
+      "output_key": "verify_result"
     }
-  }
+  ]
 }
