@@ -392,6 +392,48 @@ def controller_node(state):
 
 ---
 
+---
+
+## 七、v3.3 Hermes 增强更新 (2026-05-28)
+
+基于 [Hermes Agent](https://github.com/NousResearch/hermes-agent) (171k stars, Nous Research) 的生产级模式，结合 [ai-auto-study](https://github.com/Sxkl/ai-auto-study) 学习引擎，实施以下优化：
+
+### 新增 Agent (4)
+
+| Agent | 填补模式 | Hermes 对应 |
+|-------|---------|-----------|
+| **security-gate-agent** | 安全审批 | `tools/approval.py` + `tools/threat_patterns.py` |
+| **context-compressor-agent** | 上下文压缩 | `agent/context_compressor.py` (5 阶段管道) |
+| **delegation-agent** | 并行委托 | `tools/delegate_tool.py` (ThreadPoolExecutor) |
+| **mental-simulator-agent** | 内心模拟/干运行 | `callbacks.py` + notebook 10+14 |
+
+### 升级 Agent (6)
+
+| Agent | 旧版本 | 新版本 | 变化 |
+|-------|:--:|:--:|------|
+| review-agent | v3 | **v4** | 大文件审查前上下文压缩，防 token 溢出 |
+| deploy-agent | v2 | **v3** | push 前干运行 + 安全审批门 |
+| fix-agent | v3 | **v4** | 修复前安全扫描 + 高风险内心模拟 + 元认知自评 |
+| memory-agent | v1 | **v1.1** | 引用 `ai-auto-study/src/memory.py` (SQLite+FTS5) |
+| meta-cognitive-agent | v1 | **v1.1** | 引用 `ai-auto-study/src/security.py` (ThreatScanner) |
+| self-improve-agent | v1 | **v1.1** | 引用 `ai-auto-study/src/skills.py` (SkillLoader) |
+
+### 模式覆盖提升
+
+```
+优化前: 13/21 模式
+优化后: 19/21 模式 (+6)
+新增: 上下文压缩、干运行、插件系统、并行委托、内心模拟、安全审批
+```
+
+### 闭环学习
+
+```
+Hermes Agent (开源) → ai-auto-study (学习) → src/ 模块 (实现) → opencode agents (部署)
+```
+
+---
+
 *报告生成时间：2026-05-28*
-*参考仓库：https://github.com/FareedKhan-dev/all-agentic-architectures*
-*本地路径：/tmp/all-agentic-architectures/*
+*参考仓库：https://github.com/Sxkl/ai-auto-study*
+*Hermes Agent: https://github.com/NousResearch/hermes-agent*

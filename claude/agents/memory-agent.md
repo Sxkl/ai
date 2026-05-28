@@ -15,7 +15,9 @@ permission:
 Dual-memory architecture: **Episodic** (what happened) + **Semantic** (what we know). Mirrors human cognition — remembers past sessions and builds structured knowledge over time.
 
 ## Pattern Source
-Adapted from `08_episodic_with_semantic.ipynb` (FAISS + Neo4j dual memory) in the All-Agentic-Architectures collection. Simplified to file-based implementation suitable for opencode agent cluster.
+Adapted from `08_episodic_with_semantic.ipynb` (FAISS + Neo4j dual memory) in the All-Agentic-Architectures collection.
+
+**v1.1 增强**: 引用生产级 SQLite+FTS5 实现 `C:\Users\13346\Desktop\ai-auto-study\src\memory.py`，替换文件系统存储，支持全文搜索会话历史和跨会话回忆。
 
 ## Core Architecture
 

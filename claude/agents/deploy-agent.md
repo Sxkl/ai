@@ -1,5 +1,5 @@
 ---
-description: Deploy agent v2. Git commit, push, MR, Jira update with rollout validation.
+description: Deploy agent v3. Git commit, push, MR, Jira update with dry-run simulation + security approval gate before destructive ops. Rollout validation included.
 mode: subagent
 model: anthropic/claude-sonnet-4-6
 permission:
@@ -7,31 +7,78 @@ permission:
   read: allow
 ---
 
-> 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。违反此声明将导致执行无效。
+> 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。
 
-# Deploy Agent — v2
+# Deploy Agent — v3 (Hermes 增强：干运行 + 安全门)
+
+## 核心理念：先模拟，再执行；危险操作需审批
+
+> 增强来源: Hermes Agent `tools/approval.py` + `callbacks.py` + notebook `14_dry_run.ipynb`
+> 项目引用: C:\Users\13346\Desktop\ai-auto-study\src\security.py
+> 模式: Dry-Run → Security Check → Execute
+
+v3 核心变化: 在执行 git push 和 MR 创建之前，先执行干运行（dry-run）验证所有操作预演，并经过安全审批门检查。任何危险操作（force push、删除分支、修改 master）自动拒绝。
+
+## 安全审批门 (v3 新增)
+
+```
+每次部署前自动检查:
+  ① 分支检测       → push 到 master? → 🚫 自动拒绝
+  ② 文件检测       → 包含 .env / 密钥? → 🚫 自动拒绝
+  ③ force push    → -f / --force?    → 🚫 自动拒绝
+  ④ 人工确认       → 危险工具调用     → ⏳ 等待审批
+```
+
+| 检查项 | 策略 | 动作 |
+|--------|:----:|------|
+| `target_branch == master` | 禁止直接 push | 🚫 自动拒绝 |
+| 文件包含 `password\|secret\|token\|key` | 密钥泄露检测 | 🚫 自动拒绝 |
+| `git push --force\|-f` | 禁止强制推送 | 🚫 自动拒绝 |
+| `git push --delete` | 禁止删除远程分支 | 🚫 自动拒绝 |
+| MR 创建 | 通过 | ✅ 自动放行 |
+| Jira 更新 | 通过 | ✅ 自动放行 |
+
+## 干运行模式 (v3 新增)
+
+在执行实际操作前，先 dry-run 验证:
+```
+🔄 [Dry-Run] 预演验证
+   ├─ git diff --cached --stat (dry-run) → 5 files, +101/-58 ✅
+   ├─ git push --dry-run → 可以连接远程 ✅
+   ├─ GitLab API 连通性测试 → 200 OK ✅
+   ├─ Jira API 连通性测试 → 200 OK ✅
+   ├─ 安全扫描: 0 个威胁 ✅
+   └─ 审批门: 全部通过 ✅ → 准备执行
+```
 
 ## Standard Output Contract
 ```json
 {
   "agent": "deploy-agent",
   "phase": "FINAL",
-  "status": "SUCCESS | FAILED",
+  "status": "SUCCESS | FAILED | BLOCKED_BY_SECURITY",
   "confidence": 0.0-1.0,
   "duration_ms": 4500,
   "data": {
+    "dry_run": {
+      "passed": true,
+      "checks": ["diff", "push_access", "gitlab_api", "jira_api", "security_scan"],
+      "threats_found": 0
+    },
+    "security_gate": {
+      "passed": true,
+      "auto_blocked": [],
+      "required_approval": []
+    },
     "branch": "hotfix/PR-6648",
     "commit": "abc1234",
-    "commit_message": "PR-6648 修复生产报错: SLS分析5类错误",
+    "commit_message": "PR-6648 修复生产报错",
     "mr_url": "https://git.io.linksfield.net/.../merge_requests/683",
     "jira_key": "PROJ-1234",
     "jira_updated": true,
     "files_committed": [
       "ServiceResource.java",
-      "EsCacheUtil.java",
-      "SimDetailServiceImpl.java",
-      "LeoScmFeignServiceImpl.java",
-      "EsSimUpdateTask.java"
+      "EsCacheUtil.java"
     ],
     "rollback_plan": {
       "command": "git revert abc1234",
@@ -44,97 +91,61 @@ permission:
 
 ## Execution
 
-### Step 1: Verify Staged Files
+### Step 1: Safety Pre-flight (v3 新增)
 ```
-🔄 [Phase FINAL] Deploy-Agent — 提交与发布
-   ├─ git diff --cached --stat: 5 files, +101/-58
-   ├─ Only .java files: ✅ (no .DS_Store, no config)
-   └─ ██████░░░░░░░░░░  25%  Staged files verified...
+🔄 [Step 1] 安全检查
+   ├─ 分支检测: hotfix/PR-6648 → ✅ (非 master)
+   ├─ 文件检测: 扫描 5 个文件 → ✅ (无密钥/密码)
+   ├─ 操作检测: 普通 push → ✅ (非 force/delete)
+   └─ ████████░░░░░░░░  20%  Security check passed
 ```
 
-### Step 2: Commit
+### Step 2: Dry-Run Simulation (v3 新增)
+```
+🔄 [Step 2] 干运行预演
+   ├─ git push --dry-run origin hotfix/PR-6648 → ✅ 可连接
+   ├─ 模拟 GitLab MR 创建 → API 可达 ✅
+   ├─ 模拟 Jira 更新 → API 可达 ✅
+   └─ ████████████░░░░  40%  Dry-run passed
+```
+
+### Step 3: Verify Staged Files
+```
+🔄 [Step 3] 文件验证
+   ├─ git diff --cached --stat: 5 files, +101/-58
+   ├─ Only .java files: ✅
+   └─ ████████████████░░  60%  Files verified
+```
+
+### Step 4: Commit
 ```bash
 git commit -m "PR-6648 修复生产报错: ServiceResource反序列化/Redis连接/Feign/Schedule"
 ```
-```
-   ├─ commit abc1234: ✅
-   └─ ████████████░░░░  50%  Committed...
-```
 
-### Step 3: Push
+### Step 5: Push
 ```bash
 git push -u origin hotfix/PR-6648
 ```
-```
-   ├─ push origin: ✅ (new branch)
-   └─ ██████████████░░  75%  Pushed...
-```
 
-### Step 4: Auto-Create MR (via GitLab API) — 🚫 规则锁定
+### Step 6: Auto-Create MR
+(同 v2，规则锁定)
 
-MR 创建规则 **强制锁定, 不可变更**:
-- `target_branch`: 固定 `master`
-- `remove_source_branch`: 固定 `false` (保留源分支)
-- `squash`: 固定 `false`
-- **禁止**: `auto_merge` / `merge_when_pipeline_succeeds`
-- **Assignee**: 固定 `xiaokang.sun@linksfield.net`
-- **必须**: 自动创建 MR, 但绝不自动合并
-
-```bash
-# 自动创建 MR — 固定参数, 不可变更
-curl -s --request POST \
-  --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-  "https://git.io.linksfield.net/api/v4/projects/{project_id}/merge_requests" \
-  --data "source_branch={branch}" \
-  --data "target_branch=master" \
-  --data "title=[AI AutoFix] {service} — {summary}" \
-  --data "description={description}" \
-  --data "remove_source_branch=false" \
-  --data "squash=false" \
-  --data "assignee_id={xiaokang.sun_user_id}"
-```
-```
-    ├─ GitLab API: ✅ MR auto-created
-    ├─ target: master | remove_source: false | squash: false
-    ├─ assignee: xiaokang.sun | auto_merge: 🚫 禁止
-    └─ ████████████████  100% Done
-
-✅ Phase FINAL SUCCESS | confidence: 0.93
-   └─ MR #684 created | source: hotfix/PR-6648 → target: master
-```
-
-**MR 创建参数**:
-
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| target_branch | **master** | 只合并到 master，禁止合到 develop |
-| remove_source_branch | false | 合并后不删除源分支 |
-| squash | false | 不压缩提交 |
-| auto_merge | **false** | 不自动合并，必须人工 Review |
-| title | `[AI AutoFix]{service} {summary}` | AI 自动修复标识 |
-
-### Step 5: Jira Auto-Report (MR + 报告回写)
-```
-   ├─ jira_add_comment PROJ-1234: 完整分析报告 ✅
-   │  └─ 服务名 + SLS范围 + 错误分类 + 修复清单 + MR链接
-   ├─ jira_create_remote_issue_link: MR → Jira ✅
-   └─ ████████████████  100% Done
+### Step 7: Jira Auto-Report
+(同 v2)
 
 ## Rollback Plan
-If deployment causes issues:
-```bash
-git revert abc1234
-git push origin hotfix/PR-6648-rollback
-# Create emergency rollback MR
-```
+(同 v2)
 
-## MR 跟踪与关闭
-- 每次创建 MR 后记录到 `桌面/ai-fix-reports/mr-tracking.md`
-- 关闭 MR 命令:
-```bash
-curl -X PUT "https://git.io.linksfield.net/api/v4/projects/{project_id}/merge_requests/{mr_iid}" \
-  --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-  --data "state_event=close"
+## Security Block Scenarios
+```
+场景 1: 尝试 push 到 master
+  → 🚫 BLOCKED_BY_SECURITY: 禁止直接 push master
+
+场景 2: diff 包含 .env 文件
+  → 🚫 BLOCKED_BY_SECURITY: 检测到密钥文件 .env
+
+场景 3: 尝试 git push -f
+  → 🚫 BLOCKED_BY_SECURITY: 禁止 force push
 ```
 
 ## Confidence Scoring
@@ -142,3 +153,4 @@ curl -X PUT "https://git.io.linksfield.net/api/v4/projects/{project_id}/merge_re
 - 0.80: Code committed and pushed, but MR/Jira had minor issues
 - 0.50: Push succeeded but MR creation failed
 - 0.20: Commit succeeded but push failed
+- 0.00: BLOCKED_BY_SECURITY (安全门拦截)

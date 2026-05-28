@@ -17,6 +17,8 @@ Learns from successes. Every high-quality output goes into a persistent memory b
 ## Pattern Source
 Adapted from `15_RLHF.ipynb` (GoldStandardMemory + Self-Refinement Loop) in the All-Agentic-Architectures collection.
 
+**v1.1 增强**: 引用生产级技能系统 `C:\Users\13346\Desktop\ai-auto-study\src\skills.py` (SkillLoader + SkillRegistry)，学习到的模式自动沉淀为可复用 SKILL.md。
+
 ## Core Architecture
 
 ```
