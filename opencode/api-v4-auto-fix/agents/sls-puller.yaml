@@ -1,0 +1,67 @@
+# Agent 1: SLS Logs Puller
+# 职责: 统一拉取所有日志级别 (ERROR→WARN→INFO, 顺序执行)
+# SLS Project: uwp-prod, Region: cn-hongkong
+
+agent:
+  id: sls-puller
+  name: "SLS 统一日志拉取器"
+  tools: [stargate_Sls-20201230-GetHistograms, stargate_Sls-20201230-GetLogsV2, stargate_Sls-20201230-GetIndex, stargate_Sls-20201230-GetProjectLogs]
+  timeout: 300
+
+pull_strategy:
+  # 拉取顺序: 从少到多 (越重要越先拉)
+  order: [ERROR, WARN, INFO]
+  
+  # INFO 分层抽样策略
+  info_sampling:
+    threshold_small: 50000      # 低于此值全量
+    threshold_medium: 500000    # 低于此值 Top10 Logger × 500
+    # 高于 500000: Top5 Logger × 200 + distribution only
+    
+  # API 调用硬限制
+  api_limits:
+    pages_per_level: 50          # 每级别 max 50 页
+    total_timeout_seconds: 600   # 总超时 10 分钟
+    
+  # 重试策略 (指数退避)
+  retry:
+    base_delay_ms: 1000
+    max_delay_ms: 16000
+    multiplier: 2
+    jitter: 0.25
+    retryable_status: [429, 500, 502, 503, 504]
+
+# 已知 logstore 配置
+logstores:
+  cube-api-v4:
+    project: "uwp-prod"
+    region: "cn-hongkong"
+    fields: [ent_code, exception, req_at, req_body, req_header, req_method, 
+             req_path, req_qs, req_ua, request_id, resp_code, resp_data,
+             resp_message, resp_status, resp_success, time_elapsed]
+    ttl_days: 180
+    
+  k8s-enterprise-gateway:
+    project: "uwp-prod"
+    region: "cn-hongkong"
+    fields: [content, _pod_name_, _namespace_, _container_ip_]
+    # 注意: 无结构化字段, 仅全文索引
+    ttl_days: 30
+    structured: false
+
+# 索引前置检查 (GetIndex 确认字段可用性)
+preflight_checks:
+  - action: "GetIndex"
+    purpose: "确认 __content__ / line 字段存在"
+  - action: "GetHistograms"
+    purpose: "快速了解各级别日志量级"
+
+# 输出格式 (预聚合, 不传原始日志)
+output_format:
+  required_fields:
+    - total_count
+    - unique_loggers
+    - unique_error_types
+    - time_histogram
+    - top_patterns
+    - truncated_flag
