@@ -1,0 +1,58 @@
+# Agent 2: Log Classifier
+# 职责: 6 维分类 + 噪声过滤
+
+agent:
+  id: log-classifier
+  name: "日志分类器"
+  timeout: 120
+
+# 6 维分类
+classifications:
+  - dimension: "日志级别"
+    values: [ERROR, WARN, INFO]
+    compute: "占比计算"
+    
+  - dimension: "模块/Logger"
+    values: ["Top 10 Logger 排序"]
+    compute: "频率统计"
+    
+  - dimension: "错误类型"
+    values: [Jackson, Redis, Feign, DB, NullPointer, 超时, 自定义]
+    compute: "正则匹配 + exception字段"
+    
+  - dimension: "线程池"
+    values: ["nio-80-exec (HTTP)", "scheduling (定时)", "cInvokePool (异步)"]
+    compute: "thread name 匹配"
+    
+  - dimension: "频率等级"
+    values: ["高频 (>100/h)", "中频 (10-100/h)", "低频 (<10/h)"]
+    compute: "时间分桶统计"
+    
+  - dimension: "业务影响"
+    values: ["用户可见", "系统内部"]
+    compute: "resp_status + req_path 判断"
+
+# 噪声过滤规则 (从 noise-patterns.yaml 加载)
+noise_filters:
+  global:
+    - regex: "es sim update get lock fail"
+      reason: "ES定时任务多Pod竞争锁"
+      level: WARN
+      auto_filter: true
+    - regex: "HealthCheck.*timed? ?out"
+      reason: "滚动发布临时探活超时"
+      level: WARN
+      auto_filter: true
+      
+  k8s-enterprise-gateway:
+    - regex: "无分组套餐继续调用原接口"
+      reason: "套餐分组降级正常行为"
+      level: WARN
+      auto_filter: true
+
+# 输出格式
+output:
+  tables:
+    - "分类统计表 (6维)"
+    - "Top 10 Logger 热度矩阵"
+    - "每类代表性样本 (top 3 log lines)"

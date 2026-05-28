@@ -1,0 +1,58 @@
+# Agent 3: Pattern Analyzer
+# 职责: 7 项深度模式分析 + 风险评分
+
+agent:
+  id: pattern-analyzer
+  name: "模式分析器"
+  timeout: 120
+
+# 7 项分析清单
+analyses:
+  - id: trend
+    name: "异常趋势分析"
+    method: "对比上次扫描 vs 本次, 计算增长率"
+    
+  - id: anti_pattern
+    name: "日志反模式检测"
+    checks:
+      - "无堆栈ERROR: log.error(msg) 无 e 参数"
+      - "null消息: log.error('{}', e.getMessage()) 输出 null"
+      - "级别误用: DEBUG泄漏到WARN/ERROR"
+      - "空catch: catch后无日志"
+      - "敏感数据: password/token/secret/iccid 出现在日志"
+      
+  - id: time_cluster
+    name: "时序聚类"
+    method: "分钟级直方图, 标记突发峰值 (>均值×3)"
+    
+  - id: correlation
+    name: "关联分析"
+    method: "WARN → ERROR 时间因果链"
+    
+  - id: periodicity
+    name: "周期性检测"
+    method: "固定时间点爆发检测"
+    
+  - id: freq_anomaly
+    name: "频率异常"
+    threshold: "增长率 > 50%/周 → 标记 ⚠️"
+    
+  - id: risk_score
+    name: "风险评分"
+    formula: "clamp(freq(1-4) × severity(1-4) × novelty(1.0|2.0), 1, 10)"
+
+# 风险评分矩阵
+risk_matrix:
+  frequency:
+    1: "< 10次/周"
+    2: "10-100次/周"  
+    3: "100-1000次/周"
+    4: "> 1000次/周"
+  severity:
+    1: "纯INFO噪音"
+    2: "WARN可忽略"
+    3: "WARN需关注"
+    4: "ERROR影响用户"
+  novelty:
+    is_new: 2.0    # 新出现问题权重翻倍
+    existing: 1.0

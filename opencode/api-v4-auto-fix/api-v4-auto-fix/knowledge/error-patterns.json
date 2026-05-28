@@ -1,0 +1,167 @@
+{
+  "version": "1.0.0",
+  "source": "PR-6836: cube-api-v4 全链路日志分析",
+  "analysis_date": "2026-05-28",
+  "analysis_period": "2026-03-28 ~ 2026-05-28 (2 months)",
+  "services_analyzed": ["cube-api-v4", "k8s-enterprise-gateway"],
+  "total_error_count": 37743877,
+  "true_errors": 44362,
+  "false_errors": 37699515,
+  "signal_to_noise_ratio": 0.0012,
+  
+  "patterns": [
+    {
+      "id": "K001",
+      "title": "Connection Refused — Feign 连接失败无重试",
+      "severity": "P0",
+      "risk_score": 8,
+      "frequency_per_week": 5500,
+      "error_message": "finishConnect(..) failed: Connection refused: svc-enterprise-gateway.default.svc.cluster.local/192.168.136.176:80",
+      "resp_status": 500,
+      "affected_ent_codes": ["CN00001188", "P002671"],
+      "affected_paths": ["/cube/v4/sims/*"],
+      "root_cause": "FeignConfig.java:57 — Client.Default 无连接池, Retryer.NEVER_RETRY, 无 Circuit Breaker",
+      "reproducible": true
+    },
+    {
+      "id": "K002",
+      "title": "TimedFeignLogger ERROR 级别滥用",
+      "severity": "P0",
+      "risk_score": 6,
+      "frequency_per_week": 250000,
+      "error_message": "rsp-header date=... FeignConfig$TimedFeignLogger [line:132]",
+      "resp_status": "N/A (Feign内部日志)",
+      "affected_ent_codes": ["ALL"],
+      "root_cause": "FeignConfig.java:88 — TimedFeignLogger.log() 全部使用 log.error()",
+      "reproducible": true
+    },
+    {
+      "id": "K003",
+      "title": "CB-99-9400 伪ERROR — SMS MO 业务拒绝",
+      "severity": "P0",
+      "risk_score": 6,
+      "frequency_per_week": 4580000,
+      "error_message": "CB-99-9400 (HTTP 200)",
+      "resp_status": 200,
+      "affected_ent_codes": ["CN00000964"],
+      "affected_paths": ["/cube/v4/sms/mo/*"],
+      "root_cause": "cube-api-v4 日志切面将 HTTP 200 + 业务错误码记为 ERROR",
+      "reproducible": true
+    },
+    {
+      "id": "K004",
+      "title": "sim-service 响应编码 ISO-8859-1 → 中文乱码",
+      "severity": "P1",
+      "risk_score": 3,
+      "frequency_per_week": 1100,
+      "error_message": "data: \\\"??????: null\\\"",
+      "resp_status": 200,
+      "affected_ent_codes": ["ALL"],
+      "affected_paths": ["/sim/api/suspend"],
+      "root_cause": "sim-service Content-Type: charset=ISO-8859-1, FeignClient 无 UTF-8 Decoder",
+      "reproducible": true
+    },
+    {
+      "id": "K005",
+      "title": "ControllerLogAdvice 统一包装 CB-99-9999 掩盖真错误",
+      "severity": "P1",
+      "risk_score": 4,
+      "frequency_per_week": 5500,
+      "error_message": "CB-99-9999 Internal Server Error",
+      "resp_status": 500,
+      "root_cause": "ControllerLogAdvice.java:52 — catch(Throwable) 统一返回 CB-99-9999",
+      "reproducible": true
+    },
+    {
+      "id": "K006",
+      "title": "SMS MO 消息队列重试风暴",
+      "severity": "P1",
+      "risk_score": 4,
+      "frequency_per_week": 4580000,
+      "error_message": "同一 ICCID 2月重试 ~10,500 次",
+      "root_cause": "SMS MO 处理失败(CB-99-9400)后消息队列无限重试, 无死信队列",
+      "reproducible": true
+    },
+    {
+      "id": "K007",
+      "title": "K8s Pod 192.168.136.176 不稳定",
+      "severity": "P0",
+      "risk_score": 8,
+      "frequency_per_week": 5500,
+      "root_cause": "Pod crash/restart 循环, Readiness Probe 过宽, 无 PDB 保护",
+      "reproducible": false
+    },
+    {
+      "id": "K008",
+      "title": "API Gateway 连接提前关闭",
+      "severity": "P2",
+      "risk_score": 2,
+      "frequency_per_week": 1,
+      "error_message": "Connection prematurely closed BEFORE response",
+      "root_cause": "AliCloud API Gateway 超时 < 后端处理时间",
+      "reproducible": false
+    }
+  ],
+  
+  "fixes": [
+    {
+      "for": "K001",
+      "title": "添加 Feign Retryer + 连接池 + Circuit Breaker",
+      "files_to_change": ["FeignConfig.java"],
+      "lines": "57-72",
+      "effort": "1h",
+      "risk": "低 — 纯增配置"
+    },
+    {
+      "for": "K002",
+      "title": "重构 Feign Logger 日志级别",
+      "files_to_change": ["FeignConfig.java"],
+      "lines": "88-136",
+      "effort": "30m",
+      "risk": "低 — 仅改日志级别"
+    },
+    {
+      "for": "K003",
+      "title": "cube-api-v4 业务错误码降级为 WARN",
+      "files_to_change": ["cube-api-v4 日志切面"],
+      "effort": "30m",
+      "risk": "低"
+    },
+    {
+      "for": "K004",
+      "title": "配置 Feign Decoder UTF-8",
+      "files_to_change": ["SimFeignConfig.java (新建)"],
+      "effort": "20m",
+      "risk": "低"
+    },
+    {
+      "for": "K005",
+      "title": "ControllerLogAdvice 异常分类处理",
+      "files_to_change": ["ControllerLogAdvice.java"],
+      "lines": "48-70",
+      "effort": "1h",
+      "risk": "中 — 需回归测试"
+    },
+    {
+      "for": "K006",
+      "title": "SMS MO 增加 ICCID 去重缓存 + DLQ",
+      "files_to_change": ["SMS 处理链路"],
+      "effort": "2h",
+      "risk": "中 — 涉及消息队列配置"
+    },
+    {
+      "for": "K007",
+      "title": "排查 K8s Pod 健康状态 + 调整 Probe + 添加 PDB",
+      "files_to_change": ["K8s Deployment YAML"],
+      "effort": "1h (运维)",
+      "risk": "低"
+    },
+    {
+      "for": "K008",
+      "title": "调大 API Gateway 超时 + 后端异步处理",
+      "files_to_change": ["API Gateway 配置"],
+      "effort": "30m (运维)",
+      "risk": "低"
+    }
+  ]
+}

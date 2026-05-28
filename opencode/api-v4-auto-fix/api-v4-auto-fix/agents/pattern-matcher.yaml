@@ -1,0 +1,75 @@
+# Agent: Pattern Matcher — 预扫描案例匹配器
+# 在拉取日志前先向量检索历史案例, 命中则跳过分析
+
+agent:
+  id: pattern-matcher
+  name: "案例预匹配器"
+  timeout: 10
+  tools: [chromadb-query, vector_store]
+
+# 匹配流程
+workflow:
+  - step: "接收错误摘要"
+    input: "错误签名 + 调用链 + 响应码"
+    
+  - step: "向量检索"
+    action: "在 ChromaDB error_patterns / vectors.json 中匹配"
+    threshold: 0.85
+    
+  - step: "判定"
+    on_hit: |
+      返回: {
+        "matched": true,
+        "pattern_id": "K001",
+        "confidence": 0.92,
+        "root_cause": "MNO Gateway超时",
+        "known_fix": "sim-service MNO调用独立10s超时+降级",
+        "recommendation": "跳过深度分析, 仅更新统计数据"
+      }
+    on_miss: |
+      返回: {
+        "matched": false,
+        "recommendation": "全量分析"
+      }
+
+# 预匹配的 8 个已知模式
+known_patterns:
+  K001:
+    match_keywords: ["Read timed out", "sim-service", "querySimDetail", "SocketTimeoutException", "latency=30030"]
+    root_cause: "MNO Gateway超时 (sim路径)"
+    fix: "MNO独立10s超时+降级"
+    
+  K002:
+    match_keywords: ["Read timed out", "cube-server", "ApiCubeFeignClient", "statusToDetail", "details", "SocketTimeoutException"]
+    root_cause: "MNO Gateway超时 (cube路径)"
+    fix: "同K001 — 同一MNO瓶颈"
+    
+  K003:
+    match_keywords: ["CB-99-9400", "HTTP 200", "SMS MO", "time_elapsed=0", "参数错误"]
+    root_cause: "SMS MO参数校验 → 日志级别误用"
+    fix: "log.warn替代log.error"
+    
+  K004:
+    match_keywords: ["Connection refused", "192.168.136.176", "finishConnect", "resp_status=500"]
+    root_cause: "K8s Pod不可达 + Feign无Retryer"
+    fix: "排查Pod + Feign Retryer(3次) + 连接池"
+    
+  K005:
+    match_keywords: ["TimedFeignLogger", "rsp-header", "req-header", "line:132", "line:159"]
+    root_cause: "Feign日志级别滥用"
+    fix: "DEBUG/WARN替代ERROR"
+    
+  K006:
+    match_keywords: ["suspend/v2", "pause", "CB-99-9999", "ISO-8859-1", "??????"]
+    root_cause: "sim暂停拒绝 + 中文乱码"
+    fix: "UTF-8 Decoder + 查sim拒绝原因"
+    
+  K007:
+    match_keywords: ["/bundle", "createOrderByAssetId", "iotordernew", "订购", "bundleOrdering"]
+    root_cause: "OMS iot-order订购超时"
+    fix: "排查OMS服务"
+    
+  K008:
+    match_keywords: ["connect timed out", "contract-service", "getContract", "TCP"]
+    root_cause: "K8s滚动更新瞬时故障"
+    fix: "仅需监控告警"

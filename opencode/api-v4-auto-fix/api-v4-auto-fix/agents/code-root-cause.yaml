@@ -1,0 +1,87 @@
+# Agent 4: Code Root Cause Analyzer
+# 职责: 从 GitLab 拉取代码 → 定位根因 → 生成修复方案
+
+agent:
+  id: code-root-cause
+  name: "代码级根因分析器"
+  tools: [stargate_gitlab_search_projects, stargate_gitlab_get_file, stargate_gitlab_list_files, stargate_gitlab_search_code]
+  timeout: 180
+
+# 已知代码仓库映射
+repo_map:
+  cube-api-v4:
+    primary_repo: "cube/enterprise/enterprise-gateway"
+    secondary_repos:
+      - "sphere/sphere2-business-support"  # sim-service
+    
+  k8s-enterprise-gateway:
+    primary_repo: "cube/enterprise/enterprise-gateway"
+
+# 代码分析清单 (按优先级)
+analysis_checklist:
+  - name: "Feign配置检查"
+    files: ["src/main/java/net/linksfield/config/FeignConfig.java"]
+    check:
+      - "是否有 Retryer Bean?"
+      - "是否有 Connection Pool?"
+      - "是否有 Circuit Breaker?"
+      - "Timeout 配置?"
+      - "日志级别: log.error() 使用是否合理?"
+      
+  - name: "Controller切面检查"
+    files: ["src/main/java/net/linksfield/aop/ControllerLogAdvice.java"]
+    check:
+      - "异常捕获粒度?"
+      - "错误码映射是否区分错误类型?"
+      - "日志级别是否合理?"
+      
+  - name: "Feign Client检查"
+    files: ["src/main/java/net/linksfield/external/*.java"]
+    check:
+      - "encoding 配置 (UTF-8?)"
+      - "URL 配置是否正确?"
+      - "Timeout 单独配置?"
+      
+  - name: "异常处理检查"
+    files: ["src/main/java/net/linksfield/aop/GlobalExceptionHandler.java"]
+    check:
+      - "异常类型是否区分处理?"
+      - "是否有 fallback?"
+
+# 已知根因模式 (向量化到 ChromaDB 后检索)
+known_root_causes:
+  K001:
+    error_pattern: "Connection refused.*svc-enterprise-gateway"
+    root_cause: "FeignConfig 无 Retryer + Connection Pool"
+    fix_location: "FeignConfig.java:57"
+    fix_code: |
+      @Bean public Retryer feignRetryer() { return new Retryer.Default(100, 1000, 3); }
+      @Bean public Client feignClient() { return new ApacheHttpClient(); }
+    
+  K002:
+    error_pattern: "rsp-header.*ERROR.*TimedFeignLogger"
+    root_cause: "TimedFeignLogger.log() 所有日志用 log.error()"
+    fix_location: "FeignConfig.java:88"
+    fix_code: |
+      响应头/响应体 → log.debug(); 非2xx → log.warn(); IOException → log.error()
+    
+  K003:
+    error_pattern: "CB-99-9400.*HTTP 200"
+    root_cause: "cube-api-v4 将业务错误码记为 ERROR"
+    fix_location: "cube-api-v4 日志切面"
+    fix_code: |
+      if (httpStatus == 200 && businessCode == "CB-99-9400") log.warn(...)
+      
+  K004:
+    error_pattern: "charset=ISO-8859-1|\\?\\?\\?\\?\\?\\?"
+    root_cause: "sim-service 响应编码为 ISO-8859-1 非 UTF-8"
+    fix_location: "Feign Decoder 配置"
+    fix_code: |
+      @Bean public Decoder feignDecoder() { return new JacksonDecoder(); }
+      
+  K005:
+    error_pattern: "CB-99-9999.*ControllerLogAdvice"
+    root_cause: "所有异常统一包装为 CB-99-9999"
+    fix_location: "ControllerLogAdvice.java:52"
+    fix_code: |
+      按 IOException/SocketTimeoutException/FeignException 分类返回不同错误码

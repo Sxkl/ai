@@ -1,0 +1,183 @@
+# api-v4-auto-fix: cube-api 全链路自动扫描 DAG 流水线
+# 基于 PR-6836 全流程标准化, 含预扫描案例匹配
+
+pipeline:
+  name: "cube-api-auto-scan"
+  version: "2.0.0"
+  description: "cube-api-v4 → enterprise-gateway → 22下游服务 全链路扫描 + 根因分析"
+
+# ============================================================
+# DAG 节点定义 (10 阶段)
+# ============================================================
+dag:
+  # ── Phase 0: 预扫描匹配 ──
+  - id: pre_match
+    name: "案例预匹配"
+    agent: pattern-matcher
+    action: "向量检索历史案例 → 若命中则直接返回已知根因, 跳过后续分析"
+    timeout: 10s
+    on_hit: "SKIP to report_generate"
+    on_miss: "CONTINUE"
+
+  # ── Phase 1: 服务发现 ──
+  - id: discover
+    name: "服务发现"
+    agent: orchestrator
+    action: "匹配 service_registry → 解析 SLS project/logstore/region + GitLab repo"
+    timeout: 10s
+    depends_on: [pre_match]
+
+  # ── Phase 2: SLS 日志拉取 ──
+  - id: pull_errors
+    name: "ERROR日志拉取"
+    agent: sls-puller
+    action: "cube-api-v4 ERROR → k8s-enterprise-gateway ERROR → k8s-cube-server ERROR"
+    timeout: 120s
+    depends_on: [discover]
+
+  - id: pull_warns
+    name: "WARN日志拉取"
+    agent: sls-puller
+    action: "各级 WARN 日志 + 噪声过滤"
+    timeout: 60s
+    depends_on: [discover]
+
+  # ── Phase 3: 多维分类 ──
+  - id: classify
+    name: "多维分类"
+    agent: log-classifier
+    action: "按接口/企业/错误码/异常类型/HTTP状态 5维分类"
+    timeout: 60s
+    depends_on: [pull_errors, pull_warns]
+
+  # ── Phase 4: 下游服务扫描 (并行) ──
+  - id: scan_downstream
+    name: "下游服务扫描"
+    agent: downstream-scanner
+    action: "逐个 FeignClient 扫描 → 按 io-pattern 追到下游 SLS + 代码"
+    timeout: 180s
+    depends_on: [classify]
+
+  # ── Phase 5: 根因分析 ──
+  - id: root_cause
+    name: "根因分析"
+    agent: root-cause-analyzer
+    action: "代码级定位 + 4层日志证据链 + 根因分类"
+    timeout: 120s
+    depends_on: [scan_downstream]
+
+  # ── Phase 6: 向量化写入 ──
+  - id: vectorize
+    name: "向量化写入"
+    agent: chromadb-writer
+    action: "将新发现的问题模式写入 ChromaDB, 供下次预匹配"
+    timeout: 30s
+    depends_on: [root_cause]
+
+  # ── Phase 7: 报告生成 + Jira ──
+  - id: report_generate
+    name: "报告+Jira"
+    agent: report-generator
+    action: "8段报告 + LQS评分 + 全链路拓扑图 + Jira附件/评论"
+    timeout: 120s
+    depends_on: [root_cause, vectorize]
+
+# ============================================================
+# 预扫描匹配规则
+# ============================================================
+pre_scan:
+  # 匹配逻辑: 向量相似度 ≥ 0.85 → 命中
+  match_threshold: 0.85
+  
+  # 匹配维度
+  dimensions:
+    - name: "错误签名"
+      source: "SLS logs ERROR exception field"
+      weight: 0.4
+    - name: "调用链路径"
+      source: "FeignClient + req_path"
+      weight: 0.3
+    - name: "响应码/HTTP状态"
+      source: "resp_code + resp_status"
+      weight: 0.2
+    - name: "企业码"
+      source: "ent_code"
+      weight: 0.1
+
+  # 命中后的行为
+  on_hit:
+    skip_steps: [pull_errors, pull_warns, classify, scan_downstream, root_cause]
+    action: "直接复用历史根因 + 仅获取最新数据更新统计"
+    output: "预匹配报告 + 建议跳过详细分析"
+
+# ============================================================
+# 服务注册表
+# ============================================================
+service_registry:
+  cube-api-v4:
+    role: "入口API网关"
+    sls_project: "uwp-prod"
+    sls_logstore: "cube-api-v4"
+    sls_region: "cn-hongkong"
+    
+  k8s-enterprise-gateway:
+    role: "内部路由网关"
+    sls_project: "uwp-prod"
+    sls_logstore: "k8s-enterprise-gateway"
+    sls_region: "cn-hongkong"
+    gitlab_repo: "cube/enterprise/enterprise-gateway"
+    feign_clients: 22
+    
+  k8s-cube-server:
+    role: "cube后端服务"
+    sls_project: "uwp-prod"
+    sls_logstore: "k8s-cube-server"
+    gitlab_repo: "cube/cube-server"
+    
+  k8s-newk8s-sim:
+    role: "SIM卡操作服务"
+    sls_project: "uwp-prod"
+    sls_logstore: "k8s-newk8s-sim"
+    gitlab_repo: "cube/platform/sim-service"
+    
+  k8s-newk8s-contract:
+    role: "合约服务"
+    sls_project: "uwp-prod"
+    sls_logstore: "k8s-newk8s-contract"
+    gitlab_repo: "cube/platform/contract-service"
+
+# ============================================================
+# 全链路超时拓扑 (自动生成)
+# ============================================================
+timeout_topology:
+  bottlenecks:
+    - service: "MNO Gateway Dispatcher"
+      url: "svc-mno-gateway-dispatcher/biz/operation"
+      hit_by: ["cube-server", "sim-service"]
+      count: 32566
+      type: "Read timed out"
+      
+    - service: "OMS iot-order"
+      url: "/iotordernew/createOrderByAssetId"
+      hit_by: ["cube-server"]
+      type: "Read timed out (订购路径)"
+      
+  known_no_issue:
+    - "iot-order (非OMS)"
+    - "contract-service (仅有K8s滚动更新瞬时故障)"
+    - "sms-service / cdr-* / data-pool / base-data / rule-engine / product / etc (18个服务0超时)"
+
+# ============================================================
+# 超时控制
+# ============================================================
+timeouts:
+  pre_match: 10s
+  discover: 10s
+  pull_errors: 120s
+  pull_warns: 60s
+  classify: 60s
+  scan_downstream: 180s
+  root_cause: 120s
+  vectorize: 30s
+  report_generate: 120s
+  total: 600s
