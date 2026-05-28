@@ -161,7 +161,8 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 
 | 版本 | 日期 | 变更 |
 |:--:|------|------|
-| **v3.4** | **2026-05-28** | **RAG 混合搜索 + Cron 定时 + Tree of Thoughts + Prompt Caching** |
+| **v3.5** | **2026-05-28** | **RAG 云端 Supabase + 7 新 Agent + Pipeline DAG + Prompt Caching** |
+| v3.4 | 2026-05-28 | RAG 混合搜索 + Cron 定时 + Tree of Thoughts + Prompt Caching |
 | v3.3 | 2026-05-28 | Hermes 增强: 压缩/委托/模拟 + 3 新 Agent + 6 升级 |
 | v3.2 | 2026-05-28 | PRD-to-Verified DAG (24 步, 13 层, Stargate 架构) |
 | v3.1 | 2026-05-28 | Continuous Loop 8 阶段 + 9 新 Agent |
