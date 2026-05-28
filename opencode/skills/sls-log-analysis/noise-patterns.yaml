@@ -1,0 +1,61 @@
+version: 1
+# 全局通用噪声模式 (所有 Logstore 生效)
+global:
+  - regex: "es sim update get lock fail"
+    reason: "ES定时任务多Pod竞争分布式锁的正常行为，功能不受影响"
+    level: WARN
+    auto_filter: true
+    expires_after: 365d
+
+  - regex: "HealthCheck|health.*check.*timed? ?out"
+    reason: "滚动发布时的临时探活超时，k8s会自动重启探活"
+    level: WARN
+    auto_filter: true
+    expires_after: 365d
+
+  - regex: "Connection reset by peer"
+    reason: "客户端主动断开连接，服务端无法控制"
+    level: WARN
+    auto_filter: true
+    expires_after: 365d
+
+  - regex: "Broken pipe"
+    reason: "客户端关闭连接后服务端尝试写入，正常网络行为"
+    level: WARN
+    auto_filter: true
+    expires_after: 365d
+
+  - regex: "bulk op response.*\"errors\":false"
+    reason: "ElasticSearch批量更新成功响应，INFO级别含'fail'字符串为误匹配"
+    level: INFO
+    auto_filter: true
+    expires_after: 365d
+
+# 服务特定噪声模式
+k8s-newk8s-sim:
+  - regex: "sim update get lock fail"
+    reason: "EsSimUpdateTask 多Pod竞争的预期行为"
+    level: WARN
+    auto_filter: true
+
+  - regex: "bulk op response:BulkResponse"
+    reason: "ES v4_sim_list_master 索引批量更新响应，正常业务日志"
+    level: INFO
+    auto_filter: true
+
+k8s-newk8s-contract: []
+
+k8s-newk8s-customer: []
+
+k8s-newk8s-did-service: []
+
+k8s-newk8s-event-center: []
+
+iot-contract: []
+iot-imsi: []
+iot-message: []
+iot-order: []
+iot-warning: []
+iot-supplier-middleware: []
+iot-supplier-gateway: []
+iot-order-move: []

@@ -1,47 +1,57 @@
-# OpenCode Agents — Production-Grade Multi-Agent Orchestration Platform
+# OpenCode Agent System
 
-基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作系统，用于自动化生产故障排查与修复。
+Production-grade multi-agent orchestration platform. Two independent copies that evolve separately and learn from each other.
 
-## 架构概览
+## 目录结构
 
 ```
-User → Coordinator (DAG Scheduler)
-         │
-         ├─ Layer 0:        [Git Prep] ────── [SLS Scan]
-         ├─ Layer 1:        [Jira Create] ─── [DB Check]
-         ├─ Layer 2:        [Analyze Root Cause]  ← Dual Memory + Metacognitive
-         ├─ Layer 3:        [Code Fix]            ← Self-Improvement Loop
-         ├─ Layer 4-5:      [R1/R2/R3 Review]    ← Scoring + Feedback
-         ├─ Layer 5a:       [Quality Gate]        ← score >= 7? → loop back
-         ├─ Layer 6:        [Deploy + MR]
-         ├─ Layer 7:        [Report Backfill]
-         └─ Layer 8:        [Verify]
+├── opencode/                     ← ~/.config/opencode/ 独立副本
+│   ├── agents/                   ← 16 个生产级 agent 定义
+│   ├── skills/                   ← 25 个 skill
+│   ├── knowledge/                ← 知识库 (K001-K015 + SOP)
+│   ├── rag/                      ← RAG 向量检索配置
+│   └── opencode.json             ← OpenCode 配置
+│
+├── claude/                       ← ~/.claude/ 独立副本
+│   ├── agents/                   ← 同一套 agents
+│   ├── skills/                   ← 同一套 skills
+│   ├── knowledge/                ← 同一套知识库
+│   ├── CLAUDE.md                 ← Claude CLI 协调器
+│   └── settings.json             ← Claude CLI 配置
+│
+├── agentic-architectures-analysis.md  ← 架构学习分析报告
+└── README.md
 ```
 
-## 核心理念 (v3.1)
+## 相互学习规则
 
-从 [all-agentic-architectures](https://github.com/FareedKhan-dev/all-agentic-architectures) 仓库中学习的三个原则：
+两套副本各自演化。当一边有改进时，**手动**同步到另一边：
 
-### 1. 迭代优于单次 (Self-Improvement Loop)
-- `fix → review → score < 7 → fix(revision) → review`
-- 最多 3 轮迭代, 每轮针对性修订
-- 质量不达标不交付
+```bash
+# 查看两边差异
+diff -rq opencode/agents/ claude/agents/
+diff -rq opencode/skills/ claude/skills/
 
-### 2. 记忆优于无状态 (Dual Memory)
-- **Episodic Memory**: 相似历史案例检索
-- **Semantic Memory**: 知识库模式匹配 (index.md)
-- 自动沉淀新案例到知识库
+# 从 opencode 同步到 claude
+rsync -av opencode/agents/ claude/agents/
+rsync -av opencode/skills/ claude/skills/
 
-### 3. 自知优于盲动 (Metacognitive)
-- Agent 自我模型: 能力边界 + 局限
-- 置信度评估: AUTO_FIX / NEEDS_HUMAN / ESCALATE
-- 不确定的问题主动上报人类
+# 从 claude 同步到 opencode
+rsync -av claude/agents/ opencode/agents/
+rsync -av claude/skills/ opencode/skills/
+```
 
-## Agent 目录
+## 三大核心原则 (v3.1)
+
+1. **迭代优于单次**: fix → review → score < 7 → fix(revision) → max 3 rounds
+2. **记忆优于状态**: 分析前先查 knowledge/index.md 中的已知模式
+3. **自知优于盲动**: 元认知检查 → AUTO_FIX / NEEDS_HUMAN / ESCALATE
+
+## Agent 列表
 
 | Agent | 功能 | 版本 |
 |-------|------|:----:|
-| `coordinator` | DAG 调度 + 规则引擎 | v3.1 |
+| `coordinator` | DAG 调度 + 规则引擎 (Skill Executor) | v3.1 |
 | `analyze-agent` | 根因分析 + 双记忆 + 元认知 | v3 |
 | `fix-agent` | 代码修复 + 迭代修订 | v3 |
 | `review-agent` | 三轮审查 + 评分 + 反馈循环 | v3 |
@@ -55,19 +65,10 @@ User → Coordinator (DAG Scheduler)
 | `cost-tracker` | Token/API 成本追踪 | v2 |
 | `skill-executor` | Skills DAG 执行引擎 | v1 |
 | `workflow-driver` | AI-Native 开发工作流 | v1 |
-| `sls-log-analysis` | 全级别日志梳理分析 | v1 |
-| `production-incident-fix` | 生产故障排查修复 | v2 |
 
-## 快速开始
+## 灵感来源
 
-1. 安装 OpenCode CLI
-2. 将本仓库克隆到 `~/.config/opencode/`
-3. 配置 `.env` 中的 API keys
-4. 配置 `known-services.yaml` 中的服务列表
-5. **重启 OpenCode** 以加载新配置
-
-## 相关资源
-
-- [OpenCode 文档](https://opencode.ai)
-- [Agentic Architectures 参考](https://github.com/FareedKhan-dev/all-agentic-architectures)
-- [详细分析报告](agentic-architectures-analysis.md)
+- [all-agentic-architectures](https://github.com/FareedKhan-dev/all-agentic-architectures) — 17 种现代 Agent 架构的教学实现
+- Self-Improvement Loop (RLHF)
+- Episodic + Semantic Memory
+- Reflexive Metacognitive

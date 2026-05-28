@@ -1,0 +1,213 @@
+# Knowledge-Librarian 知识管理规则
+# 自动去重 + 时效管理 + 统计报告 + 向量嵌入
+# 版本: 2.0 (Dual Memory Support)
+# 原则: 仅标记，不自动删除；所有删除操作需人工确认
+# 灵感: all-agentic-architectures/08_episodic_with_semantic.ipynb
+
+version: "1.0"
+enabled: true
+
+# ============================================================
+# 1. 去重规则
+# ============================================================
+dedup:
+  # 相似度阈值
+  cosine_threshold: 0.85          # 超过此相似度视为重复
+
+  # 待检查字段 (用于相似度比较)
+  compare_fields:
+    - title                       # 条目标题
+    - pattern_description         # 模式描述
+    - fix_template                # 修复模板
+    - matching_features           # 匹配特征 (regex)
+
+  # 去重策略
+  strategy: "keep_best"           # keep_best(保留置信度高/测试多的) | keep_first(保留最早的) | manual(全部人工)
+  
+  # "最佳"判定权重
+  keep_best_criteria:
+    confidence: 0.4               # conf 字段权重
+    hit_count: 0.3                # 命中次数权重
+    recency: 0.3                  # 最近使用时间权重
+
+  # 重复条目标记
+  mark_as: "duplicate"            # 添加 [DUPLICATE of K0XX] 标签
+  action: "flag_only"             # flag_only(仅标记) | suggest_merge(建议合并到主条目) | auto_merge(自动合并)
+
+  # 排除 (不被去重检查)
+  exclude:
+    - id_prefix: "U0"             # 不可修复模式 (U001-U005) 不参与去重
+    - id_prefix: "DECISION-"      # 决策模式不参与去重
+
+# ============================================================
+# 2. 时效管理
+# ============================================================
+freshness:
+  # 命中跟踪字段 (在每个条目 YAML frontmatter 中)
+  tracked_fields:
+    - last_hit_date               # 最后命中日期 (ISO 8601)
+    - hit_count                   # 总命中次数
+    - success_count               # 成功修复次数
+    - fail_count                  # 修复失败次数
+    - avg_fix_time_minutes        # 平均修复耗时
+    - first_seen_date             # 首次发现日期
+
+  # 状态流转
+  states:
+    active:
+      description: "活跃 — 30天内被命中过"
+      condition: "last_hit_date >= now() - 30d"
+      icon: "🟢"
+    
+    stale:
+      description: "过时 — 30-90天未被命中"
+      condition: "last_hit_date between now()-90d and now()-30d"
+      icon: "🟡"
+      action: "mark_stale"        # 添加 [STALE] 标签 + 标注 "自 {date} 未命中"
+    
+    archived:
+      description: "归档 — 90+天未被命中"
+      condition: "last_hit_date < now() - 90d"
+      icon: "🔴"
+      action: "suggest_archive"   # 添加到归档建议列表，等待人工确认
+      # 归档操作: 移动到 knowledge/archived/ 目录，从 index.md 移除索引行
+
+  # 豁免 (永不过时)
+  exempt:
+    - id: "K001"                  # Jackson 未知字段 — 经典模式，永远需要
+    - id: "K003"                  # e.printStackTrace — 代码审查通用反模式
+    - id: "K012"                  # Secret 硬编码 — 安全检查，永不过时
+    - id_prefix: "U00"            # 所有不可修复模式
+
+  # 归档目录
+  archive_path: "~/.config/opencode/knowledge/archived/"
+
+# ============================================================
+# 3. 统计报告
+# ============================================================
+reporting:
+  # 生成周期
+  schedule: "weekly"              # weekly | monthly | on_demand
+  
+  # 报告内容
+  include:
+    - total_entries               # 总条目数
+    - active_count                # 活跃条目数
+    - stale_count                 # 过时条目数
+    - archived_suggestions        # 建议归档列表
+    - duplicate_suggestions       # 建议去重列表
+    - top_hit_entries             # 命中 Top 10
+    - zero_hit_entries            # 从未命中的条目
+    - avg_fix_time_by_level       # L1/L2/L3 平均修复耗时
+    - success_rate_by_pattern     # 各模式成功率
+
+  # 报告输出
+  output:
+    - format: "markdown"
+      destination: "~/.config/opencode/knowledge/librarian-report-{date}.md"
+    - format: "jira_comment"
+      destination: "latest PR project issue"   # 追加到最近的 PR Jira 评论
+
+  # 告警阈值
+  alerts:
+    - condition: "stale_count > total_entries * 0.3"
+      message: "⚠️ {stale_count}/{total} 知识条目已过时(30+天未命中)，建议审查"
+    - condition: "duplicate_suggestions >= 3"
+      message: "⚠️ 发现 {N} 组疑似重复条目，建议去重"
+
+# ============================================================
+# 4. 执行频率
+# ============================================================
+execution:
+  dedup_check: "on_entry_add"     # 添加新条目时触发去重检查
+  freshness_check: "daily"        # 每日自动检查时效
+  report_generation: "weekly"     # 每周生成统计报告
+
+# ============================================================
+# 5. 向量嵌入与记忆检索 (v2.0 — Dual Memory)
+# 灵感: all-agentic-architectures/08_episodic_with_semantic.ipynb
+# ============================================================
+memory:
+  # 层级 1: Pattern Match (Semantic — 规则匹配)
+  # 基于 index.md 中的 matching_features 正则
+  pattern_match:
+    source: "knowledge/index.md"
+    strategy: "regex_fulltext"
+    l1_section: "L1-simple/"
+    l2_section: "L2-medium/"
+    l3_section: "L3-complex/"
+    unrepairable_section: "U-series (U001-U005)"
+
+  # 层级 2: Similarity Search (Episodic — 历史案例)
+  # 将每条错误日志的关键特征与历史案例进行相似度匹配
+  similarity_search:
+    enabled: true
+    algorithm: "keyword_overlap + structure_similarity"
+    search_sources:
+      - path: "knowledge/services/"
+        description: "服务架构知识库"
+        weight: 0.40
+      - path: "knowledge/patterns/"
+        description: "标准处理流程 SOP"
+        weight: 0.30
+      - path: "knowledge/L1-simple/"
+        description: "L1 简单修复历史"
+        weight: 0.10
+      - path: "knowledge/L2-medium/"
+        description: "L2 中等修复历史"
+        weight: 0.10
+      - path: "knowledge/L3-complex/"
+        description: "L3 复杂修复历史"
+        weight: 0.10
+    similarity_threshold: 0.70
+    max_results: 5
+
+  # 层级 3: Knowledge Deposition (自动沉淀)
+  # 分析修复成功后，自动写入新案例
+  deposition:
+    enabled: true
+    trigger: "after_successful_fix"  # 仅成功的修复沉淀
+    new_pattern_prefix: "K"
+    auto_numbering: true             # 自动分配 K0XX 编号
+    required_fields:
+      - id
+      - title
+      - matching_features
+      - fix_template
+      - confidence
+      - source_service
+      - created_date
+    output_format: |
+      ---
+      id: K0XX
+      title: "{description}"
+      matching_features: "{regex}"
+      fix_template: "{template}"
+      confidence: {float}
+      severity: "L1 | L2 | L3"
+      source_service: "{service}"
+      created_date: "{date}"
+      last_hit_date: "{date}"
+      hit_count: 1
+      success_count: 1
+      fail_count: 0
+      ---
+      # {title}
+      ## 模式描述
+      ...
+      ## 修复模板
+      ...
+      ## 修复案例
+      | 日期 | 服务 | Jira | 文件 | 效果 |
+      |------|------|------|------|------|
+
+  # 服务知识库自动更新
+  service_knowledge_update:
+    enabled: true
+    trigger: "first_scan_or_new_trap_found"
+    template_path: "knowledge/services/_template.md"
+    sections:
+      - architecture_overview
+      - known_traps
+      - recent_fixes
+      - dependencies

@@ -1,0 +1,271 @@
+{
+  "$schema": "../skill-dsl-schema.yaml",
+  "skill": {
+    "slug": "sls-log-analysis",
+    "name": "SLS Log Health Analysis",
+    "version": 1,
+    "description": "Comprehensive SLS log analysis using 5-Agent collaboration: unified log pull → 6-dimension classification → pattern analysis + quality audit → report generation → Jira upload. Analyzes ALL log levels (INFO/WARN/ERROR). Read-only — does not modify code.",
+    "category": "analysis",
+    "trigger_keywords": ["日志梳理", "log analysis", "全级别扫描", "日志健康", "SLS分析", "日志Review"]
+  },
+  "governance": {
+    "budget_usd": 0,
+    "budget_chunks": 0,
+    "timeout_seconds": 1200,
+    "max_retries": 2,
+    "allowed_tools": [
+      "Sls-20201230-GetIndex",
+      "Sls-20201230-GetHistograms",
+      "Sls-20201230-GetLogsV2",
+      "Sls-20201230-GetProjectLogs",
+      "stargate_jira_create_issue",
+      "stargate_jira_update_issue",
+      "jira_jira_transition_issue",
+      "jira_jira_get_sprints_from_board",
+      "jira_jira_add_issues_to_sprint",
+      "jira_jira_add_comment",
+      "jira_jira_add_worklog"
+    ],
+    "abort_on_critical": true
+  },
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "service": { "type": "string", "description": "Service name to analyze" },
+      "sls_project": { "type": "string", "default": "uwp-prod" },
+      "sls_logstore": { "type": "string", "description": "Auto-matched from known services" },
+      "sls_region": { "type": "string", "default": "cn-hongkong" },
+      "time_range_days": { "type": "integer", "default": 7 },
+      "analysis_depth": {
+        "type": "string",
+        "enum": ["quick", "standard", "deep"],
+        "default": "standard",
+        "description": "quick=ERROR+WARN only, standard=all levels, deep=all+Eagle correlation"
+      },
+      "assignee": { "type": "string", "default": "xiaokang.sun@linksfield.net" }
+    },
+    "required": ["service"]
+  },
+  "steps": [
+    {
+      "id": "jira_create",
+      "type": "mcp_tool",
+      "description": "Create new Jira ticket for log health analysis",
+      "depends_on": [],
+      "config": {
+        "tool": "stargate_jira_create_issue",
+        "arguments": {
+          "project_key": "PR",
+          "summary": "[LogAnalysis][${input.service}] SLS全级别日志梳理 — ${input.sls_project}/${input.sls_logstore}",
+          "issue_type": "任务",
+          "assignee": "${input.assignee}",
+          "extra_fields": {
+            "issuetype": { "id": "10113" },
+            "customfield_10456": "${input.due_date}"
+          }
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "issue_key": "$.key",
+        "issue_id": "$.id"
+      }
+    },
+    {
+      "id": "jira_transition",
+      "type": "mcp_tool",
+      "description": "Transition Jira to In Progress and add to active sprint",
+      "depends_on": ["jira_create"],
+      "config": {
+        "tool": "jira_jira_transition_issue",
+        "arguments": {
+          "issue_key": "${steps.jira_create.output.issue_key}",
+          "transition_id": "351"
+        }
+      },
+      "timeout_seconds": 30,
+      "retry_policy": { "max_attempts": 2 },
+      "on_failure": "continue"
+    },
+
+    {
+      "id": "sls_fetch_all",
+      "type": "custom",
+      "description": "Agent 1 — Unified SLS Puller: Fetch ERROR → WARN → INFO logs sequentially with adaptive sampling",
+      "depends_on": ["jira_transition"],
+      "config": {
+        "function": "sls_unified_puller",
+        "arguments": {
+          "project": "${input.sls_project}",
+          "logstore": "${input.sls_logstore}",
+          "region": "${input.sls_region}",
+          "from_ts": "${input.from_ts}",
+          "to_ts": "${input.to_ts}",
+          "depth": "${input.analysis_depth}",
+          "info_strategy": {
+            "threshold_full": 50000,
+            "threshold_sample": 500000,
+            "max_pages_per_level": 50,
+            "sample_size": 500
+          }
+        }
+      },
+      "timeout_seconds": 300,
+      "retry_policy": {
+        "max_attempts": 2,
+        "backoff_base": 1,
+        "backoff_multiplier": 2
+      },
+      "on_failure": "abort",
+      "outputs": {
+        "error_logs": "$.ERROR",
+        "warn_logs": "$.WARN",
+        "info_logs": "$.INFO",
+        "all_truncated": "$.truncated",
+        "total_count": "$.total_count"
+      }
+    },
+    {
+      "id": "classify_logs",
+      "type": "llm_call",
+      "description": "Agent 2 — Log Classifier: 6-dimension classification + noise pattern filtering",
+      "depends_on": ["sls_fetch_all"],
+      "config": {
+        "model": "openrouter/anthropic/claude-sonnet-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are Agent 2 — Log Classifier. Classify log data across 6 dimensions:\n\n1. By Level: ERROR/WARN/INFO ratio and trends\n2. By Logger/Module: Top 10 Logger heat ranking\n3. By Error Type: Jackson/Redis/Feign/DB/NullPointer/Timeout/Custom\n4. By Thread Pool: nio-80-exec (HTTP) / scheduling (timers) / cInvokePool (async)\n5. By Frequency: High (>100/h) / Medium (10-100) / Low (<10)\n6. By Business Impact: User-visible / System-internal\n\nApply noise-patterns.yaml rules: mark matching logs as [FILTERED], exclude from effective signal.\n\nOutput: 4 classification tables + top 3 representative samples per category."
+          },
+          {
+            "role": "user",
+            "content": "Classify these SLS logs from ${input.service}:\n\nERROR: ${steps.sls_fetch_all.output.error_logs}\nWARN: ${steps.sls_fetch_all.output.warn_logs}\nINFO: ${steps.sls_fetch_all.output.info_logs}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "classification": "$.classification",
+        "noise_filtered": "$.noise_filtered",
+        "top_loggers": "$.top_loggers"
+      }
+    },
+    {
+      "id": "analyze_patterns",
+      "type": "llm_call",
+      "description": "Agent 3 — Pattern Analyzer: 7-item deep analysis with risk scoring",
+      "depends_on": ["classify_logs"],
+      "config": {
+        "model": "openrouter/anthropic/claude-sonnet-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are Agent 3 — Pattern Analyzer. Perform 7 deep analyses on classified log data:\n\n1. Anomaly Trends: which metrics are worsening\n2. Anti-Pattern Detection:\n   - Stackless ERROR (log.error(msg) without Throwable param)\n   - Null-message logs (log.error(\"{}\", e.getMessage()) → \"null\")\n   - Level misuse (DEBUG content using WARN/INFO level)\n   - Empty catch blocks (catch with no logging)\n   - Sensitive data leak (password/token/secret/iccid in logs)\n3. Temporal Clustering: burst peaks (minute > 3× average)\n4. Correlation Analysis: WARN→ERROR causal chains\n5. Periodicity Detection: fixed-time recurring bursts\n6. Frequency Anomalies: growth rate > 50%/week → flag\n7. Risk Scoring: score = clamp(frequency(1-4) × severity(1-4) × novelty(1.0 or 2.0), 1, 10)\n\nOutput: pattern report + risk matrix table."
+          },
+          {
+            "role": "user",
+            "content": "Analyze patterns in these classified logs from ${input.service}:\n\nClassification: ${steps.classify_logs.output.classification}\nTop Loggers: ${steps.classify_logs.output.top_loggers}\n\nFull logs for reference:\nERROR: ${steps.sls_fetch_all.output.error_logs}\nWARN: ${steps.sls_fetch_all.output.warn_logs}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "degrade",
+      "outputs": {
+        "anti_patterns": "$.anti_patterns",
+        "burst_peaks": "$.burst_peaks",
+        "correlations": "$.correlations",
+        "risk_scores": "$.risk_scores",
+        "periodicity": "$.periodicity"
+      }
+    },
+    {
+      "id": "quality_audit",
+      "type": "llm_call",
+      "description": "Agent 4 — Quality Auditor: Adversarial audit of Agent 2 and Agent 3 outputs",
+      "depends_on": ["classify_logs"],
+      "config": {
+        "model": "openrouter/google/gemini-3.1-pro-preview",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are Agent 4 — Quality Auditor. Perform adversarial audit of the classification and pattern analysis:\n\n1. Sample Verification: Randomly select 10% of raw logs, manually compare against Classifier results\n2. Missed Detection: Check if any logs cannot be classified\n3. Noise Rule Validation: Sample [FILTERED] logs to confirm no false positives\n4. Consistency Check: Compare Classifier and Pattern Analyzer conclusions, flag conflicts\n5. Coverage Check: Confirm sample size sufficient for analysis conclusions\n\nOutput: audit report + confidence rating (high/medium/low). If confidence is low, mark 'WARNING: Low Confidence'."
+          },
+          {
+            "role": "user",
+            "content": "Audit the classification and pattern analysis for ${input.service}:\n\nClassification: ${steps.classify_logs.output.classification}\nPattern Analysis: will be available at ${steps.analyze_patterns.output}\n\nSample raw logs for verification:\nERROR sample: ${steps.sls_fetch_all.output.error_logs}\nWARN sample: ${steps.sls_fetch_all.output.warn_logs}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "degrade",
+      "outputs": {
+        "confidence": "$.confidence",
+        "audit_findings": "$.audit_findings",
+        "conflicts": "$.conflicts"
+      }
+    },
+    {
+      "id": "generate_report",
+      "type": "llm_call",
+      "description": "Agent 5 — Report Generator: Merge all agent outputs into 8-section report with LQS score",
+      "depends_on": ["analyze_patterns", "quality_audit"],
+      "config": {
+        "model": "openrouter/anthropic/claude-sonnet-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are Agent 5 — Report Generator. Synthesize all agent outputs into an 8-section report:\n\nSections:\n1. Log Overview — level distribution table, module heat matrix, LQS quality score (0-100)\n2. ERROR Detailed Analysis — type/root cause/impact/code-fixable, top 3 samples each\n3. WARN Detailed Analysis — type/attention needed/noise reduction advice\n4. INFO Anomalies + Anti-Patterns — DEBUG leaks, noise, missing logs, anti-pattern checklist\n5. Temporal & Correlation Analysis — burst timeline, WARN→ERROR chains, periodicity\n6. Risk Matrix + Improvement Suggestions — risk table, actionable improvements, storage cost estimate\n7. LQS Score Breakdown — ErrorHealth/WarnQuality/InfoSNR/AntiPattern sub-scores\n8. Delta Comparison — vs previous scan (if exists)\n\nLQS Formula:\nLQS = ErrorHealth(0-40) + WarnQuality(0-20) + InfoSNR(0-20) - AntiPatternPenalty(0-20)\n- ErrorHealth: 40 - clamp(error_rate*1000, 0, 40)\n- WarnQuality: 20 - clamp(false_positive_ratio*100, 0, 20)\n- InfoSNR: clamp(actionable_info_ratio*100, 0, 20)\n- AntiPattern: anti_pattern_count * 2, max 20\n\nAppend suggested upgrade block if high-risk ERROR items are code-fixable.\nOutput full markdown report."
+          },
+          {
+            "role": "user",
+            "content": "Generate report for ${input.service}:\n\nLog data summary:\nERROR: ${steps.sls_fetch_all.output.error_logs}\nWARN: ${steps.sls_fetch_all.output.warn_logs}\nINFO: ${steps.sls_fetch_all.output.info_logs}\n\nClassification: ${steps.classify_logs.output.classification}\nPattern Analysis: ${steps.analyze_patterns.output}\nQuality Audit: ${steps.quality_audit.output}\nConfidence: ${steps.quality_audit.output.confidence}"
+          }
+        ]
+      },
+      "timeout_seconds": 180,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "report_md": "$.text",
+        "lqs_score": "$.lqs_score",
+        "lqs_grade": "$.lqs_grade",
+        "high_risk_count": "$.high_risk_count",
+        "suggested_upgrades": "$.suggested_upgrades"
+      }
+    },
+    {
+      "id": "jira_update",
+      "type": "custom",
+      "description": "Upload report to Jira: attach MD, add summary comment, transition to QA, log work hours",
+      "depends_on": ["generate_report", "jira_create"],
+      "config": {
+        "function": "jira_upload_report",
+        "arguments": {
+          "issue_key": "${steps.jira_create.output.issue_key}",
+          "transition_id": "311",
+          "report_md": "${steps.generate_report.output.report_md}",
+          "lqs_score": "${steps.generate_report.output.lqs_score}",
+          "lqs_grade": "${steps.generate_report.output.lqs_grade}",
+          "total_count": "${steps.sls_fetch_all.output.total_count}",
+          "confidence": "${steps.quality_audit.output.confidence}",
+          "high_risk_count": "${steps.generate_report.output.high_risk_count}"
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 2 },
+      "on_failure": "degrade",
+      "outputs": {
+        "jira_status": "$.status"
+      }
+    }
+  ]
+}
