@@ -1,13 +1,13 @@
 # OpenCode Multi-Agent System
 
-[![Agents](https://img.shields.io/badge/Agents-39-blue)](./opencode/agents/)
+[![Agents](https://img.shields.io/badge/Agents-41-blue)](./opencode/agents/)
 [![Skills](https://img.shields.io/badge/Skills-32-green)](./opencode/skills/)
-[![Patterns](https://img.shields.io/badge/Patterns-19/21-orange)](./agentic-architectures-analysis.md)
+[![Patterns](https://img.shields.io/badge/Patterns-20/21-orange)](./agentic-architectures-analysis.md)
 [![Status](https://img.shields.io/badge/Status-Production-brightgreen)]()
 
-基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**39 个 Agent + 32 个 Skill + 4 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **19/21 种**。
+基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**41 个 Agent + 32 个 Skill + 4 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **20/21 种**。
 
-**v3.3 Hermes 增强版**：借鉴 [Hermes Agent](https://github.com/NousResearch/hermes-agent) (171k stars) 生产级模式，新增上下文压缩、安全审批门、并行委托、内心模拟 4 种能力。
+**v3.4 智能增强版**：RAG 混合搜索 + 定时调度 + 多路径探索 + Prompt Caching 成本优化。
 
 ---
 
@@ -161,7 +161,8 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 
 | 版本 | 日期 | 变更 |
 |:--:|------|------|
-| **v3.3** | **2026-05-28** | **Hermes 增强: 安全门/压缩/委托/模拟 + 4 新 Agent + 6 Agent 升级** |
+| **v3.4** | **2026-05-28** | **RAG 混合搜索 + Cron 定时 + Tree of Thoughts + Prompt Caching** |
+| v3.3 | 2026-05-28 | Hermes 增强: 压缩/委托/模拟 + 3 新 Agent + 6 升级 |
 | v3.2 | 2026-05-28 | PRD-to-Verified DAG (24 步, 13 层, Stargate 架构) |
 | v3.1 | 2026-05-28 | Continuous Loop 8 阶段 + 9 新 Agent |
 | v3.0 | 2026-05-18 | DAG Scheduler + 4-Worker Queue + Skill Executor |
