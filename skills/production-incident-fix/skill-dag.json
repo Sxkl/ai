@@ -1,0 +1,415 @@
+{
+  "$schema": "../skill-dsl-schema.yaml",
+  "skill": {
+    "slug": "production-incident-fix",
+    "name": "Production Incident Fix",
+    "version": 1,
+    "description": "Automated end-to-end production incident analysis and fix: SLS log → error analysis → code fix → unit test → Jira → GitLab MR.",
+    "category": "incident",
+    "trigger_keywords": ["生产报错", "SLS日志分析", "代码修复", "PR-XXXX", "hotfix", "故障排查", "P4"]
+  },
+  "governance": {
+    "budget_usd": 0,
+    "budget_chunks": 0,
+    "timeout_seconds": 1800,
+    "max_retries": 2,
+    "allowed_tools": [
+      "Sls-20201230-GetIndex",
+      "Sls-20201230-GetHistograms",
+      "Sls-20201230-GetLogsV2",
+      "Sls-20201230-GetProjectLogs",
+      "stargate_jira_create_issue",
+      "stargate_jira_update_issue",
+      "jira_jira_transition_issue",
+      "jira_jira_get_sprints_from_board",
+      "jira_jira_add_issues_to_sprint",
+      "jira_jira_add_comment",
+      "jira_jira_add_worklog",
+      "stargate_gitlab_get_file",
+      "stargate_gitlab_list_branches",
+      "stargate_gitlab_create_issue",
+      "pltdb_describe_table",
+      "pltdb_search_columns",
+      "pltdb_list_tables"
+    ],
+    "abort_on_critical": true
+  },
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "service": { "type": "string", "description": "Service name to analyze" },
+      "p4_id": { "type": "string", "description": "P4/Jira issue ID (auto-generated if empty)" },
+      "sls_project": { "type": "string", "default": "uwp-prod" },
+      "sls_logstore": { "type": "string", "description": "Auto-matched from known services" },
+      "sls_region": { "type": "string", "default": "cn-hongkong" },
+      "time_range_days": { "type": "integer", "default": 7 },
+      "assignee": { "type": "string", "default": "xiaokang.sun@linksfield.net" },
+      "repo_url": { "type": "string", "description": "GitLab repo URL for the service" }
+    },
+    "required": ["service"]
+  },
+
+  "steps": [
+    {
+      "id": "git_clone",
+      "type": "custom",
+      "description": "Clone service repo, checkout master, create hotfix branch",
+      "depends_on": [],
+      "config": {
+        "function": "git_clone_and_branch",
+        "arguments": {
+          "service": "${input.service}",
+          "repo_url": "${input.repo_url}",
+          "branch_prefix": "hotfix",
+          "p4_id": "${input.p4_id}"
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "branch": "$.branch",
+        "repo_path": "$.repo_path"
+      }
+    },
+    {
+      "id": "sls_fetch",
+      "type": "mcp_tool",
+      "description": "Fetch all ERROR + Exception logs from SLS for the time range",
+      "depends_on": [],
+      "config": {
+        "tool": "Sls-20201230-GetLogsV2",
+        "arguments": {
+          "project": "${input.sls_project}",
+          "logstore": "${input.sls_logstore}",
+          "from": "${input.from_ts}",
+          "to": "${input.to_ts}",
+          "query": "\"ERROR\" OR \"Exception\"",
+          "line": 100
+        }
+      },
+      "timeout_seconds": 300,
+      "retry_policy": {
+        "max_attempts": 3,
+        "backoff_base": 1,
+        "backoff_multiplier": 2,
+        "retryable_statuses": [429, 500, 502, 503, 504]
+      },
+      "on_failure": "abort",
+      "outputs": {
+        "raw_logs": "$.result",
+        "total_count": "$.result.total_count"
+      }
+    },
+    {
+      "id": "jira_create",
+      "type": "mcp_tool",
+      "description": "Create a new Jira ticket with full 5-section Description template",
+      "depends_on": [],
+      "config": {
+        "tool": "stargate_jira_create_issue",
+        "arguments": {
+          "project_key": "PR",
+          "summary": "[AutoFix][${input.service}] SLS生产报错分析 — ${input.sls_project}/${input.sls_logstore}",
+          "issue_type": "任务",
+          "assignee": "${input.assignee}",
+          "description": "## 🚨 生产故障自动排查 — ${input.service}\n\n### 📋 基本信息\n| 字段 | 值 |\n|------|-----|\n| 服务名称 | ${input.service} |\n| 代码仓库 | ${input.repo_url} |\n| 修复分支 | hotfix/${input.p4_id}-${input.service} |\n| 目标分支 | master |\n| 责任人 | ${input.assignee} |\n| 预计工时 | 2h |\n| 计划开始 | ${input.current_time} |\n| 计划结束 | ${input.current_time_plus_2h} |\n| 截止时间 | ${input.current_date_plus_1d} |\n\n### 📊 SLS 日志范围\n| 字段 | 值 |\n|------|-----|\n| SLS Project | ${input.sls_project} |\n| Logstore | ${input.sls_logstore} |\n| Region | ${input.sls_region} |\n| 时间范围 | 近 ${input.time_range_days} 天 |\n| 查询关键词 | ERROR OR Exception OR fail |\n\n### 🔍 排查计划\n#### Phase 1: SLS 日志拉取 (预计 5min)\n#### Phase 2: 数据库验证 (预计 3min, 条件触发)\n#### Phase 3: 根因分析 (预计 5min)\n#### Phase 4: 代码修复 (预计 10min)\n#### Phase 5: 三轮审查 (预计 10min)\n#### Phase 6: 单元测试 (预计 10min)\n#### Phase 7: 提交发布 (预计 3min)\n\n### 📝 备注\n- 本工单由 OpenCode Multi-Agent 系统自动创建\n- 分析文档将作为附件上传",
+          "extra_fields": {
+            "issuetype": { "id": "10113" },
+            "customfield_10456": "${input.due_date}",
+            "customfield_10108": "${input.current_time}",
+            "customfield_10109": "${input.current_time_plus_2h}",
+            "assignee": { "name": "xiaokang.sun@linksfield.net" },
+            "timetracking": { "originalEstimate": "2h", "remainingEstimate": "2h" }
+          }
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "issue_key": "$.key",
+        "issue_id": "$.id"
+      }
+    },
+    {
+      "id": "jira_transition_start",
+      "type": "mcp_tool",
+      "description": "Transition Jira to In Progress; add to active sprint",
+      "depends_on": ["jira_create"],
+      "config": {
+        "tool": "jira_jira_transition_issue",
+        "arguments": {
+          "issue_key": "${steps.jira_create.output.issue_key}",
+          "transition_id": "351"
+        }
+      },
+      "timeout_seconds": 30,
+      "retry_policy": { "max_attempts": 2 },
+      "on_failure": "continue"
+    },
+    {
+      "id": "sls_analyze",
+      "type": "llm_call",
+      "description": "Analyze SLS logs: classify errors, identify root causes, propose fixes",
+      "depends_on": ["sls_fetch"],
+      "config": {
+        "model": "openrouter/anthropic/claude-sonnet-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a production incident analyzer. Analyze the SLS log data and produce a structured error classification. For each error type: identify root cause, propose fix, assign severity (P0/P1/P2)."
+          },
+          {
+            "role": "user",
+            "content": "Analyze these production error logs from ${input.service}:\n\n${steps.sls_fetch.output.raw_logs}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "error_categories": "$.error_categories",
+        "root_causes": "$.root_causes",
+        "fix_plan": "$.fix_plan",
+        "requires_db_check": "$.requires_db_check"
+      }
+    },
+    {
+      "id": "dms_verify",
+      "type": "mcp_tool",
+      "description": "Verify database schemas if errors reference DB columns/tables",
+      "depends_on": ["sls_analyze"],
+      "when": "${steps.sls_analyze.output.requires_db_check} == true",
+      "config": {
+        "tool": "pltdb_describe_table",
+        "arguments": {
+          "table_name": "${steps.sls_analyze.output.db_table_name}"
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 2 },
+      "on_failure": "degrade",
+      "outputs": {
+        "schema": "$.result",
+        "column_mismatch": "$.result.column_mismatch"
+      }
+    },
+    {
+      "id": "generate_analysis",
+      "type": "custom",
+      "description": "Generate the full error analysis markdown document",
+      "depends_on": ["sls_analyze", "dms_verify"],
+      "config": {
+        "function": "generate_analysis_doc",
+        "arguments": {
+          "service": "${input.service}",
+          "p4_id": "${input.p4_id}",
+          "error_categories": "${steps.sls_analyze.output.error_categories}",
+          "root_causes": "${steps.sls_analyze.output.root_causes}",
+          "db_findings": "${steps.dms_verify.output}"
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 1 },
+      "on_failure": "continue",
+      "outputs": {
+        "doc_path": "$.doc_path",
+        "files_to_modify": "$.files_to_modify"
+      }
+    },
+    {
+      "id": "code_fix",
+      "type": "custom",
+      "description": "Apply code fixes for each identified error category",
+      "depends_on": ["generate_analysis"],
+      "config": {
+        "function": "apply_code_fixes",
+        "arguments": {
+          "repo_path": "${steps.git_clone.output.repo_path}",
+          "fix_plan": "${steps.sls_analyze.output.fix_plan}",
+          "files_to_modify": "${steps.generate_analysis.output.files_to_modify}"
+        }
+      },
+      "timeout_seconds": 300,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "modified_files": "$.modified_files",
+        "fix_summary": "$.fix_summary"
+      }
+    },
+    {
+      "id": "review_round1",
+      "type": "llm_call",
+      "description": "Round 1 review: Basic correctness — compilation, imports, method signatures, type safety",
+      "depends_on": ["code_fix"],
+      "config": {
+        "model": "openrouter/openai/gpt-5.3-codex",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are Round 1 Code Reviewer. Check for: compilation errors, import correctness, method signature validity, type safety, API usage correctness. Output a table of findings with severity P0/P1/P2."
+          },
+          {
+            "role": "user",
+            "content": "Review these changes for ${input.service}:\n\nFiles modified: ${steps.code_fix.output.modified_files}\n\nChanges: ${steps.code_fix.output.fix_summary}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "findings": "$.findings",
+        "p0_count": "$.p0_count"
+      }
+    },
+    {
+      "id": "review_round2",
+      "type": "llm_call",
+      "description": "Round 2 review: Thread safety, edge cases, concurrency, null safety, resource leaks",
+      "depends_on": ["review_round1"],
+      "config": {
+        "model": "openrouter/google/gemini-3.1-pro-preview",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are Round 2 Code Reviewer (Challenger). Challenge Round 1 findings. Check for: thread safety, race conditions, null safety, resource leaks, serializer consistency. Mark false positives, upgrades, downgrades, and missed issues."
+          },
+          {
+            "role": "user",
+            "content": "Challenge these Round 1 findings:\n${steps.review_round1.output.findings}\n\nAdditional context:\nFiles: ${steps.code_fix.output.modified_files}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "confirmed": "$.confirmed",
+        "false_positives": "$.false_positives",
+        "missed_issues": "$.missed_issues"
+      }
+    },
+    {
+      "id": "review_round3",
+      "type": "llm_call",
+      "description": "Round 3 review: Production readiness, regression risk, final verdict",
+      "depends_on": ["review_round2"],
+      "config": {
+        "model": "openrouter/anthropic/claude-sonnet-4.6",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are Round 3 Code Reviewer (Arbiter). Given R1 and R2 findings, produce a final verdict. Assess: regression risk, production readiness, logging quality. Output: confirmed issues, final score (0-10), merge recommendation."
+          },
+          {
+            "role": "user",
+            "content": "R1 findings: ${steps.review_round1.output.findings}\n\nR2 challenge: confirmed=${steps.review_round2.output.confirmed}, false_positives=${steps.review_round2.output.false_positives}, missed=${steps.review_round2.output.missed_issues}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "score": "$.score",
+        "merge_recommendation": "$.merge_recommendation",
+        "confirmed_issues": "$.confirmed_issues"
+      }
+    },
+    {
+      "id": "gate_review_approval",
+      "type": "gate",
+      "description": "Await human approval if review score >= 10 or merge recommendation is 'needs_changes'",
+      "depends_on": ["review_round3"],
+      "when": "${steps.review_round3.output.score} >= 10 or ${steps.review_round3.output.merge_recommendation} == 'needs_changes'",
+      "config": {
+        "message": "Code review found issues (score: ${steps.review_round3.output.score}). Approve to proceed with merge anyway, or reject to abort.",
+        "options": ["approve", "reject"],
+        "default_option": "reject",
+        "timeout_seconds": 3600
+      },
+      "on_failure": "abort"
+    },
+    {
+      "id": "unit_test",
+      "type": "custom",
+      "description": "Write and execute unit tests for the modified code",
+      "depends_on": ["review_round3", "gate_review_approval"],
+      "config": {
+        "function": "run_unit_tests",
+        "arguments": {
+          "repo_path": "${steps.git_clone.output.repo_path}",
+          "modified_files": "${steps.code_fix.output.modified_files}",
+          "test_command": "mvn test -pl . -Dtest=${input.service}Test"
+        }
+      },
+      "timeout_seconds": 600,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "test_results": "$.test_results",
+        "passed": "$.passed",
+        "failed": "$.failed"
+      }
+    },
+    {
+      "id": "git_push_mr",
+      "type": "custom",
+      "description": "Commit changes, push branch, create GitLab MR",
+      "depends_on": ["unit_test", "git_clone"],
+      "config": {
+        "function": "git_commit_and_push",
+        "arguments": {
+          "repo_path": "${steps.git_clone.output.repo_path}",
+          "branch": "${steps.git_clone.output.branch}",
+          "modified_files": "${steps.code_fix.output.modified_files}",
+          "commit_message": "${input.p4_id} fix: ${steps.code_fix.output.fix_summary}",
+          "mr_title": "${input.p4_id} 修复生产环境报错: ${input.service}",
+          "target_branch": "master"
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 2 },
+      "on_failure": "abort",
+      "outputs": {
+        "commit_sha": "$.commit_sha",
+        "mr_url": "$.mr_url"
+      }
+    },
+    {
+      "id": "jira_update",
+      "type": "custom",
+      "description": "Update Jira: 8-section report + transition to QA + worklog + attachment upload + sprint assign",
+      "depends_on": ["git_push_mr", "jira_create"],
+      "config": {
+        "function": "jira_update_final",
+        "arguments": {
+          "issue_key": "${steps.jira_create.output.issue_key}",
+          "transition_id": "311",
+          "mr_url": "${steps.git_push_mr.output.mr_url}",
+          "branch": "${steps.git_clone.output.branch}",
+          "commit_sha": "${steps.git_push_mr.output.commit_sha}",
+          "review_summary": "${steps.review_round3.output}",
+          "test_results": "${steps.unit_test.output.test_results}",
+          "analysis_doc": "${steps.generate_analysis.output.doc_path}",
+          "description_template": "## 一、问题总览\n| 错误类型 | 数量 | 严重程度 | 是否可代码修复 |\n|---------|------|---------|---------------|\n${steps.sls_analyze.output.error_categories}\n\n## 二、详细分析\n${steps.sls_analyze.output.root_causes}\n\n## 三、修改文件清单\n${steps.code_fix.output.modified_files}\n\n## 四、审查结果\n- R1 (编译正确性): ${steps.review_round1.output.findings}\n- R2 (线程安全): 确认=${steps.review_round2.output.confirmed}, 误报=${steps.review_round2.output.false_positives}\n- R3 (最终裁定): 评分=${steps.review_round3.output.score}/10, 结论=${steps.review_round3.output.merge_recommendation}\n\n## 五、测试建议\n${steps.unit_test.output.test_results}\n\n## 六、预期效果\n- 修复后对应错误类型不再出现\n\n## 七、遗留问题\n${steps.review_round3.output.confirmed_issues}\n\n## 八、决策记录\n| 决策项 | 决定 |\n|-------|------|\n| 审查通过 | ${steps.review_round3.output.score}/10 |\n| 合并建议 | ${steps.review_round3.output.merge_recommendation} |\n\n## 🔗 链接\n- MR: ${steps.git_push_mr.output.mr_url}\n- Branch: ${steps.git_clone.output.branch}\n- Commit: ${steps.git_push_mr.output.commit_sha}",
+          "worklog_comment": "AI自动修复: ${input.service}\n- 修改文件: ${steps.code_fix.output.modified_files}\n- 审查评分: ${steps.review_round3.output.score}/10\n- 测试结果: 通过=${steps.unit_test.output.passed}, 失败=${steps.unit_test.output.failed}"
+        }
+      },
+      "timeout_seconds": 120,
+      "retry_policy": { "max_attempts": 2 },
+      "on_failure": "degrade",
+      "outputs": {
+        "jira_status": "$.status"
+      }
+    }
+  ]
+}

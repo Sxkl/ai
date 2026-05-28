@@ -1,0 +1,248 @@
+{
+  "$schema": "../skill-dsl-schema.yaml",
+  "skill": {
+    "slug": "code-review",
+    "name": "Code Review — 3-Round Adversarial",
+    "version": 1,
+    "description": "强制三轮对抗式 AI 代码审查, 审查通过后方可提交代码. R1 审查员 → R2 挑战者 → R3 裁定者.",
+    "category": "review",
+    "trigger_keywords": ["提交", "commit", "push", "MR", "merge", "合并", "评审", "review"]
+  },
+  "governance": {
+    "budget_usd": 1.50,
+    "budget_chunks": 15,
+    "timeout_seconds": 1200,
+    "max_retries": 1,
+    "allowed_tools": [
+      "stargate_gitlab_get_file",
+      "stargate_gitlab_get_merge_request_diff",
+      "bash"
+    ],
+    "abort_on_critical": true
+  },
+
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "changed_files": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Files changed in this commit/MR"
+      },
+      "branch": { "type": "string", "description": "Current branch name" },
+      "commit_message": { "type": "string", "description": "Planned commit message" },
+      "target_branch": { "type": "string", "default": "master", "description": "Target branch for MR" },
+      "repo_id": { "type": "string", "description": "GitLab project ID/path" },
+      "language": { "type": "string", "enum": ["java", "python", "javascript", "typescript", "go", "sql"], "default": "java" },
+      "jira_key": { "type": "string", "description": "Associated Jira issue key for commenting review summary" }
+    },
+    "required": ["changed_files", "branch"]
+  },
+
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "verdict": { "type": "string", "enum": ["可合并", "需修改后合并", "不可合并"] },
+      "score": { "type": "integer", "description": "Review score 0-10, lower is better" },
+      "confirmed_issues": { "type": "array" },
+      "commit_hash": { "type": "string" },
+      "mr_url": { "type": "string" }
+    }
+  },
+
+  "steps": [
+    {
+      "id": "pre_commit_check",
+      "type": "mcp_tool",
+      "description": "Run pre-commit self-check: verify no duplicate methods, no e.printStackTrace(), no redundant logs",
+      "depends_on": [],
+      "config": {
+        "tool": "bash",
+        "arguments": {
+          "command": "git diff --stat && git diff --name-only"
+        }
+      },
+      "outputs": {
+        "diff_stat": "$.stdout"
+      },
+      "timeout_seconds": 30,
+      "retry_policy": { "max_attempts": 1 },
+      "on_failure": "continue"
+    },
+
+    {
+      "id": "read_changed_files",
+      "type": "llm_call",
+      "depends_on": ["pre_commit_check"],
+      "description": "Read all changed files to understand the full diff context",
+      "config": {
+        "model": "openrouter/anthropic/claude-sonnet-4",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Read each file in the changed list to build full context:\nChanged Files: ${input.changed_files}\nRepo: ${input.repo_id}\n\nFor each file, use stargate_gitlab_get_file to read the full content.\nReturn: {\"files_read\": [...], \"total_lines\": N}"
+          }
+        ],
+        "temperature": 0.0
+      },
+      "outputs": {
+        "files_read": "$.files_read"
+      },
+      "timeout_seconds": 180,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort"
+    },
+    {
+      "id": "review_r1",
+      "type": "llm_call",
+      "depends_on": ["read_changed_files"],
+      "description": "R1 — 审查员: Line-by-line comprehensive code review by GPT Codex",
+      "config": {
+        "model": "openrouter/openai/gpt-5.3-codex",
+        "messages": [
+          {
+            "role": "user",
+            "content": "## R1: 审查员 — 逐行审查\n\nPerform a comprehensive line-by-line code review.\n\n### Changed Files\n${input.changed_files}\n\n### Context\nFiles Read: ${steps.read_changed_files.files_read}\n\n### Review Scope — P0 (MUST fix)\n1. SQL/HQL injection (dynamic string concatenation in queries)\n2. Hardcoded passwords, API Keys, Tokens\n3. Missing authorization on API endpoints\n4. IMSI/ICCID not masked (only first 6 + last 4 digits visible)\n5. Missing @Transactional on multi-table write operations\n6. Race conditions without optimistic/pessimistic lock\n7. Batch operations without pagination (OOM risk)\n8. MySQL 8.0+ syntax (forbidden: window functions, CTE, JSON_TABLE, invisible indexes)\n9. Java 14+ syntax (forbidden: record, text blocks, pattern matching, switch expression, sealed class)\n\n### Review Scope — P1 (Strongly suggested)\n1. @Transactional on private methods (will NOT work)\n2. MyBatis XML ${\\} must use #{}\n3. @Async called within same class (will NOT work)\n4. Empty catch blocks (exception silently swallowed)\n5. External calls without timeout + retry\n6. N+1 queries (DB/RPC in loops)\n7. Logs without business context, e.printStackTrace() usage\n8. K8s: dependency on local filesystem persistence\n\n### IoT MVNO Business Rules\n1. Monetary amounts MUST use BigDecimal (never double/float)\n2. SIM state transitions MUST validate pre-condition state\n3. MNO interfaces MUST have idempotency protection\n4. Monetary changes MUST have audit logging\n\n### Output Format\nReturn a JSON object with:\n{\n  \"findings\": [\n    {\n      \"id\": 1,\n      \"severity\": \"P0|P1-HIGH|P1-MED|P1-LOW|P2\",\n      \"file\": \"path/to/file.java\",\n      \"line\": 42,\n      \"category\": \"SQL注入|NPE|事务缺失|...\",\n      \"description\": \"...\",\n      \"suggested_fix\": \"...\"\n    }\n  ],\n  \"critical_count\": N,\n  \"score\": N,\n  \"summary_md\": \"## R1 审查结果\\n| # | 严重等级 | 文件:行号 | 问题描述 | 建议修改 |\\n...\"\n}"
+          }
+        ],
+        "temperature": 0.1
+      },
+      "outputs": {
+        "r1_findings": "$.findings",
+        "r1_critical_count": "$.critical_count",
+        "r1_score": "$.score",
+        "r1_summary": "$.summary_md"
+      },
+      "timeout_seconds": 300,
+      "retry_policy": { "max_attempts": 2, "backoff_base": 2, "backoff_multiplier": 2 },
+      "on_failure": "abort"
+    },
+    {
+      "id": "review_r2",
+      "type": "llm_call",
+      "depends_on": ["review_r1"],
+      "description": "R2 — 挑战者: Challenge every R1 finding with a different model (Gemini)",
+      "config": {
+        "model": "openrouter/google/gemini-3.1-pro-preview",
+        "messages": [
+          {
+            "role": "user",
+            "content": "## R2: 挑战者 — 质疑 R1\n\nYou are a code review challenger using a different model/architecture. Your job is to critically examine R1's findings.\n\n### R1 Findings\n${steps.review_r1.r1_findings}\n\n### Changed Files\n${input.changed_files}\n\n### Instructions\nFor EACH R1 finding, produce a challenge verdict:\n\n- **确认 (Confirmed)**: Finding is valid and correctly assessed\n- **误报 (False Positive)**: Finding does NOT match the actual code context. Explain why.\n- **降级 (Downgrade)**: Severity is too high. R1 marked P0 but it's actually P1/P2. Justify.\n- **升级 (Upgrade)**: Severity is too low. R1 marked P2 but it's actually P0/P1. Justify.\n\nAdditionally:\n- **补充遗漏 (Missed)**: Identify issues R1 completely missed. These are the most dangerous.\n\n### Output Format\nReturn JSON:\n{\n  \"challenges\": [\n    {\n      \"r1_finding_id\": 1,\n      \"verdict\": \"确认|误报|降级|升级\",\n      \"reason\": \"...\",\n      \"adjusted_severity\": \"P0|P1-HIGH|P1-MED|P1-LOW|P2\"\n    }\n  ],\n  \"missed_findings\": [\n    {\n      \"severity\": \"P0|P1-HIGH|...\",\n      \"file\": \"...\",\n      \"line\": N,\n      \"category\": \"...\",\n      \"description\": \"...\"\n    }\n  ],\n  \"final_approved\": [...],\n  \"final_rejected\": [...],\n  \"summary_md\": \"## R2 质疑\\n对 R1 #1: [确认/误报/降级/升级] 理由\\n...\\n补充遗漏: ...\"\n}"
+          }
+        ],
+        "temperature": 0.2
+      },
+      "outputs": {
+        "r2_challenges": "$.challenges",
+        "r2_missed": "$.missed_findings",
+        "r2_approved": "$.final_approved",
+        "r2_rejected": "$.final_rejected",
+        "r2_summary": "$.summary_md"
+      },
+      "timeout_seconds": 300
+    },
+
+    {
+      "id": "review_r3",
+      "type": "llm_call",
+      "depends_on": ["review_r1", "review_r2"],
+      "description": "R3 — 裁定者: Final verdict synthesizing R1 and R2 evidence (Claude Sonnet)",
+      "config": {
+        "model": "openrouter/anthropic/claude-sonnet-4",
+        "messages": [
+          {
+            "role": "user",
+            "content": "## R3: 裁定者 — 最终裁定\n\nYou are the final arbitrator. Synthesize R1 (审查员) and R2 (挑战者) evidence and issue a binding verdict.\n\n### R1 Summary\n${steps.review_r1.r1_summary}\n\n### R2 Summary\n${steps.review_r2.r2_summary}\n\n### R1 Raw Findings\n${steps.review_r1.r1_findings}\n\n### R2 Challenges\n${steps.review_r2.r2_challenges}\n\n### R2 Missed Findings\n${steps.review_r2.r2_missed}\n\n### Instructions\n1. Review each finding, considering both R1's original assessment and R2's challenge\n2. For each disputed finding, state your final ruling\n3. Calculate the final score using the weight system:\n   - P0 = 10 points each\n   - P1-HIGH = 5 points each\n   - P1-MED = 3 points each\n   - P1-LOW = 1 point each\n   - P2 = 0 points (advisory only)\n4. Issue a merge recommendation:\n   - score >= 10 → \"不可合并\" (must fix before merge)\n   - score > 0 → \"需修改后合并\" (small issues, recommend fix)\n   - score == 0 → \"可合并\" (clean, ready to go)\n\n### Output Format\nReturn JSON:\n{\n  \"confirmed\": [\n    {\"id\": 1, \"severity\": \"P0\", \"file\": \"...\", \"line\": N, \"issue\": \"...\", \"suggestion\": \"...\"}\n  ],\n  \"score\": N,\n  \"verdict\": \"可合并|需修改后合并|不可合并\",\n  \"p0_count\": N,\n  \"p1_high_count\": N,\n  \"p1_med_count\": N,\n  \"p1_low_count\": N,\n  \"p2_count\": N,\n  \"summary_md\": \"## R3 最终裁定\\n\\n### 确认\\n| # | 等级 | 文件:行号 | 问题 | 建议 |\\n...\\n\\n确认: N (P0: X, P1: Y, P2: Z)\\n评分: X / 10\\n合并建议: [可合并 / 需修改后合并 / 不可合并]\"\n}"
+          }
+        ],
+        "temperature": 0.1
+      },
+      "outputs": {
+        "r3_confirmed": "$.confirmed",
+        "r3_score": "$.score",
+        "r3_verdict": "$.verdict",
+        "r3_p0_count": "$.p0_count",
+        "r3_summary": "$.summary_md"
+      },
+      "timeout_seconds": 300
+    },
+
+    {
+      "id": "gate_merge_decision",
+      "type": "gate",
+      "depends_on": ["review_r3"],
+      "description": "Pause for human decision: merge, fix-then-merge, or abort?",
+      "config": {
+        "message": "## 代码审查完成\n\n### R3 最终裁定: ${steps.review_r3.r3_verdict}\n评分: ${steps.review_r3.r3_score}/10\n\n${steps.review_r3.r3_summary}\n\n---\n\n请选择操作:\n- **merge**: 接受审查结果，继续提交\n- **fix**: 修复 P0/P1 问题后重新审查\n- **abort**: 放弃本次提交",
+        "timeout_seconds": 86400
+      },
+      "on_failure": "abort"
+    },
+
+    {
+      "id": "commit_code",
+      "type": "mcp_tool",
+      "depends_on": ["gate_merge_decision"],
+      "description": "Stage and commit approved code",
+      "config": {
+        "tool": "bash",
+        "arguments": {
+          "command": "git add ${input.changed_files} && git commit -m '${input.commit_message}'"
+        }
+      },
+      "outputs": {
+        "commit_hash": "$.stdout"
+      },
+      "timeout_seconds": 30
+    },
+
+    {
+      "id": "push_code",
+      "type": "mcp_tool",
+      "depends_on": ["commit_code"],
+      "description": "Push to remote branch",
+      "config": {
+        "tool": "bash",
+        "arguments": {
+          "command": "git push -u origin ${input.branch}"
+        }
+      },
+      "timeout_seconds": 60,
+      "retry_policy": { "max_attempts": 2 }
+    },
+
+    {
+      "id": "create_mr",
+      "type": "mcp_tool",
+      "depends_on": ["push_code"],
+      "description": "Create GitLab merge request",
+      "config": {
+        "tool": "bash",
+        "arguments": {
+          "command": "echo 'https://git.io.linksfield.net/${input.repo_id}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${input.branch}&merge_request%5Btarget_branch%5D=${input.target_branch}'"
+        }
+      },
+      "outputs": {
+        "mr_url": "$.stdout"
+      },
+      "timeout_seconds": 30
+    },
+
+    {
+      "id": "jira_comment_review",
+      "type": "mcp_tool",
+      "depends_on": ["create_mr"],
+      "when": "${input.jira_key} != ''",
+      "description": "Post review summary to Jira issue",
+      "on_failure": "skip",
+      "config": {
+        "tool": "jira_jira_add_comment",
+        "arguments": {
+          "issue_key": "${input.jira_key}",
+          "body": "## 代码审查完成\n\n### R3 最终裁定: ${steps.review_r3.r3_verdict}\n评分: ${steps.review_r3.r3_score}/10\n\n${steps.review_r3.r3_summary}\n\n### 🔗 链接\n- MR: ${steps.create_mr.mr_url}\n- Branch: ${input.branch}\n- Commit: ${steps.commit_code.commit_hash}\n\n---\n审查流程: R1(GPT Codex) → R2(Gemini Pro) → R3(Claude Sonnet) → Gate(人工确认)"
+        }
+      },
+      "timeout_seconds": 30
+    }
+  ]
+}

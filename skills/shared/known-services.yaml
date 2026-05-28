@@ -1,0 +1,131 @@
+version: 1
+last_updated: 2026-05-16
+
+# 4.0 平台 (cube/platform/*)
+4_0:
+  sim-service:
+    sls_project: uwp-prod
+    sls_logstore: k8s-newk8s-sim
+    sls_region: cn-hongkong
+    repo: cube/platform/sim-service
+    last_incident_scan: 2026-05-16
+    last_log_analysis: 2026-05-16
+    info_baseline_volume: null  # 首次 sls-log-analysis 扫描后自动填充
+
+  contract-service:
+    sls_project: uwp-prod
+    sls_logstore: k8s-newk8s-contract
+    sls_region: cn-hongkong
+    repo: cube/platform/contract-service
+    last_incident_scan: 2026-05-15
+    last_log_analysis: null
+    info_baseline_volume: null
+
+  customer-service:
+    sls_project: uwp-prod
+    sls_logstore: k8s-newk8s-customer
+    sls_region: cn-hongkong
+    repo: cube/platform/customer-service
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+
+  did-service:
+    sls_project: uwp-prod
+    sls_logstore: k8s-newk8s-did-service
+    sls_region: cn-hongkong
+    repo: cube/platform/did-service
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+
+  event-center:
+    sls_project: uwp-prod
+    sls_logstore: k8s-newk8s-event-center
+    sls_region: cn-hongkong
+    repo: cube/platform/event-center
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+
+# 3.0 平台 (v3/iot-linksfield/iot-linksfield)
+3_0:
+  iot-contract:
+    sls_project: uwp-prod
+    sls_logstore: iot-contract
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 100
+
+  iot-imsi:
+    sls_project: uwp-prod
+    sls_logstore: iot-imsi
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 100
+
+  iot-message:
+    sls_project: uwp-prod
+    sls_logstore: iot-message
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 100
+
+  iot-order:
+    sls_project: uwp-prod
+    sls_logstore: iot-order
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 100
+
+  iot-warning:
+    sls_project: uwp-prod
+    sls_logstore: iot-warning
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 100
+
+  iot-supplier-middleware:
+    sls_project: uwp-prod
+    sls_logstore: iot-supplier-middleware
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 95
+
+  iot-supplier-gateway:
+    sls_project: uwp-prod
+    sls_logstore: iot-supplier-gateway
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 70
+
+  iot-order-move:
+    sls_project: uwp-prod
+    sls_logstore: iot-order-move
+    sls_region: cn-hongkong
+    repo: v3/iot-linksfield/iot-linksfield
+    last_incident_scan: null
+    last_log_analysis: null
+    info_baseline_volume: null
+    match_confidence: 65

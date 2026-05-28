@@ -1,0 +1,26 @@
+version: "1.0"
+
+chromadb:
+  persist_directory: "~/.config/opencode/rag/chroma_db"
+  collection_name: "fix_knowledge"
+
+embedding:
+  model_name: "all-MiniLM-L6-v2"
+  fallback_model: "paraphrase-multilingual-MiniLM-L12-v2"
+  device: "cpu"
+
+chunking:
+  strategy: "markdown_header"
+  chunk_size: 1000
+  chunk_overlap: 200
+  min_chunk_size: 50
+
+knowledge_sources:
+  - path: "~/.config/opencode/knowledge"
+    glob: "**/*.md"
+    recursive: true
+
+search:
+  default_top_k: 5
+  similarity_threshold: 0.5
+  rerank_enabled: false

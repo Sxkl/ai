@@ -1,0 +1,257 @@
+# 已知服务注册表 (自动增量)
+# 每次扫描新服务后自动追加，无需手动配置
+# 3.0 = iot-linksfield (v3/iot-linksfield/iot-linksfield)
+# 4.0 = cube/platform (k8s-newk8s-*)
+
+version: "2.0"
+last_updated: "2026-05-23"
+
+jira_defaults:
+  project_key: "PR"
+  issue_type: "Task"
+  issue_type_name: "任务"
+  issue_type_id: "10113"
+  status_transitions:
+    start_work: "351"                       # To do → 处理中(执行中)
+    ready_for_qa: "311"                     # 处理中 → 核实中(测试中)
+  time_tracking:
+    default_estimate: "2h"
+  worklog:
+    create: false                           # 创建时不填工时
+    complete: true                          # 回填时按实际运行时长
+  plan_dates:
+    target_start: "customfield_10108"
+    target_end: "customfield_10109"
+  required_fields:
+    customfield_10456: "截止时间"
+  assignee: "xiaokang.sun@linksfield.net"
+  assignee_format: {"name": "xiaokang.sun@linksfield.net"}
+  priority: "Medium"
+
+mr_defaults:
+  target_branch: "master"
+  remove_source_branch: false
+  squash: false
+  auto_create: true
+  auto_merge: false                       # 🚫 禁止自动合并
+  assignee: "xiaokang.sun@linksfield.net"  # MR 经办人锁定
+  title_prefix: "[AI AutoFix]"
+
+sls_defaults:
+  project: "uwp-prod"
+  region: "cn-hongkong"
+
+# ============================================================
+# 4.0 服务 (cube/platform/*, k8s-newk8s-* logstores)
+# ============================================================
+services_4_0:
+  - name: "sim-service"
+    repo: "https://git.io.linksfield.net/cube/platform/sim-service"
+    sls_logstore: "k8s-newk8s-sim"
+    last_scan: "2026-05-15"
+    scan_count: 2
+    errors_found: ["ServiceResource soId", "Redis connection", "Feign NPE", "Schedule lock leak", "MNO gateway", "SQL sim_iccid"]
+    branches: ["hotfix/PR-6648", "hotfix/PR-6648-new"]
+
+  - name: "contract-service"
+    repo: "https://git.io.linksfield.net/cube/platform/contract-service"
+    sls_logstore: "k8s-newk8s-contract"
+    last_scan: "2026-05-15"
+    scan_count: 2
+    errors_found: ["SQL Table sphere2-contract.sim", "MnoGatewayCommonListener ERROR log"]
+    branches: ["hotfix/PR-6648-contract", "hotfix/PR-6649-contract", "hotfix/PR-6653-contract"]
+
+  - name: "customer-service"
+    repo: "https://git.io.linksfield.net/cube/platform/customer-service"
+    sls_logstore: "k8s-newk8s-customer"
+    last_scan: "-"
+    scan_count: 0
+    errors_found: []
+    branches: []
+
+  - name: "did-service"
+    repo: "https://git.io.linksfield.net/cube/platform/did-service"
+    sls_logstore: "k8s-newk8s-did-service"
+    last_scan: "-"
+    scan_count: 0
+
+  - name: "cube-server"
+    repo: "https://git.io.linksfield.net/cube/cube-server"
+    sls_logstore: "k8s-cube-server"
+    last_scan: "2026-05-23"
+    scan_count: 1
+    jira: "PR-6768"
+    lqs_score: 37
+    errors_found: ["SuspendBusiness validation", "CB-01-0107 level misuse", "GlobalExceptionHandler unknown", "distributed lock contention WARN"]
+
+  - name: "event-center"
+    repo: "https://git.io.linksfield.net/cube/platform/event-center"
+    sls_logstore: "k8s-newk8s-event-center"
+    last_scan: "-"
+    scan_count: 0
+
+# ============================================================
+# 3.0 服务 (v3/iot-linksfield/iot-linksfield, iot-* logstores)
+# 基础 repo: https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield
+# 各子项目: iot-contract, iot-imsi, iot-message, iot-order, iot-warning, etc.
+# ============================================================
+services_3_0:
+  # --- 精准匹配 (100%) ---
+  - name: "iot-contract"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-contract"
+    sls_logstore: "iot-contract"
+    last_scan: "-"
+    scan_count: 0
+    match: "exact"
+
+  - name: "iot-imsi"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-imsi"
+    sls_logstore: "iot-imsi"
+    last_scan: "-"
+    scan_count: 0
+    match: "exact"
+
+  - name: "iot-message"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-message"
+    sls_logstore: "iot-message"
+    last_scan: "-"
+    scan_count: 0
+    match: "exact"
+
+  - name: "iot-order"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-order"
+    sls_logstore: "iot-order"
+    last_scan: "-"
+    scan_count: 0
+    match: "exact"
+
+  - name: "iot-warning"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-warning"
+    sls_logstore: "iot-warning"
+    last_scan: "-"
+    scan_count: 0
+    match: "exact"
+
+  # --- Case差异匹配 (95%) ---
+  - name: "iot-supplier-middleware"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-supplierMiddleware"
+    sls_logstore: "iot-supplier-middleware"
+    last_scan: "-"
+    scan_count: 0
+    match: "case_diff"
+
+  # --- 模糊匹配 (65-70%) ---
+  - name: "iot-supplier-gateway"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "supplierGate2,supplierGate3,supplierSingle"  # 候选
+    sls_logstore: "iot-supplier-gateway"
+    last_scan: "-"
+    scan_count: 0
+    match: "fuzzy(70%)"
+
+  - name: "iot-order-move"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "Iot-mover"                                    # 候选
+    sls_logstore: "iot-order-move"
+    last_scan: "-"
+    scan_count: 0
+    match: "fuzzy(65%)"
+
+  # --- 无匹配 (待人工确认) ---
+  - name: "iot-ota"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-ota"
+    sls_logstore: "ota-check,ota-diversion"  # 关联但不完全匹配
+    last_scan: "-"
+    scan_count: 0
+    match: "partial"
+
+  - name: "iot-risk-control"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-risk-control"
+    sls_logstore: "-"  # 无对应 logstore
+    last_scan: "-"
+    scan_count: 0
+    match: "no_logstore"
+
+  - name: "iot-comm"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-comm"
+    sls_logstore: "-"  # 无对应 logstore
+    last_scan: "-"
+    scan_count: 0
+    match: "no_logstore"
+
+  - name: "iot-dtc"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-dtc"
+    sls_logstore: "-"
+    last_scan: "-"
+    scan_count: 0
+    match: "no_logstore"
+
+  - name: "iot-oms"
+    repo: "https://git.io.linksfield.net/v3/iot-linksfield/iot-linksfield"
+    subproject: "iot-oms"
+    sls_logstore: "-"
+    last_scan: "-"
+    scan_count: 0
+    match: "no_logstore"
+
+# ============================================================
+# Platform 基础设施服务 (platform/eng-infra/*, platform/airflow-dags)
+# ============================================================
+platform_services:
+  - name: "airflow-dags"
+    repo: "https://git.io.linksfield.net/platform/airflow-dags"
+    description: "Airflow DAGs for Linksfield platform — git-sync to Airflow Composer"
+    last_scan: "2026-05-18"
+    type: "orchestration"
+    key_patterns:
+      - "DAG naming: {domain}__{type}__{target}__{description}"
+      - "Cursor-based dedup via Airflow Variables"
+      - "ECS RAM role auth (no AK/SK)"
+      - "Dynamic task mapping .expand()"
+
+  - name: "gitlab-infra"
+    repo: "https://git.io.linksfield.net/platform/eng-infra/gitlab"
+    description: "GitLab CE self-hosted IaC — Docker Compose + 1P secrets"
+    last_scan: "2026-05-18"
+    host: "i-j6c5ej91pocpssr07ms6 (cn-hongkong, 172.16.0.186)"
+    type: "infrastructure"
+
+  - name: "jira-infra"
+    repo: "https://git.io.linksfield.net/platform/eng-infra/jira"
+    description: "Jira Software 10.7.3 self-hosted — Podman systemd + 1P secrets"
+    last_scan: "2026-05-18"
+    host: "i-j6c49qgt5sp3dewtvzr4 (cn-hongkong, 172.16.0.187)"
+    type: "infrastructure"
+
+  - name: "matomo-infra"
+    repo: "https://git.io.linksfield.net/platform/eng-infra/matomo"
+    description: "Matomo Analytics self-hosted — Podman systemd + OIDC/LDAP auth"
+    last_scan: "2026-05-18"
+    host: "i-j6c49qgt5sp3dewtvzr4 (cn-hongkong, 172.16.0.187)"
+    type: "infrastructure"
+
+# ============================================================
+# 3.0 无匹配 logstore (独立服务, 需人工确认)
+# ============================================================
+unmatched_logstores_3_0:
+  - logstore: "iot-lu"
+  - logstore: "iot-ussd"
+  - logstore: "iot-tel25"
+  - logstore: "iotchannel"
+  - logstore: "iotsimpliovdf"
+  - logstore: "iot_smscgw_syniverse"
+  - logstore: "iot-bip"
+  - logstore: "bip-elklog"
+  - logstore: "bip-lu-log"
+  - logstore: "bip-ussd-log"
+  - logstore: "elk-log"

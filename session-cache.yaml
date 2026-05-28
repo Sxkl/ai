@@ -1,0 +1,67 @@
+# L1 会话级缓存配置
+# 启动时自动加载到会话上下文，全 Session 共享，避免每次 task() 重传
+# 
+# 版本: 1.0
+# 更新: 修改后下次 opencode 启动生效
+# 兼容: 不影响现有 Safeguard Rules，缓存内容与原始文件保持同步
+
+version: "1.0"
+enabled: true
+
+# 启动时预加载到会话上下文的文件列表
+# token 估算基于经验均值，实际以 tokenizer 为准
+preload:
+  - file: "known-services.yaml"
+    path: "~/.config/opencode/known-services.yaml"
+    estimated_tokens: 3500
+    description: "13 服务注册表 + Jira/SLS/MR 默认配置"
+    refresh_on: "file_change"     # 文件变更时自动刷新缓存
+    
+  - file: "fix-patterns.md"
+    path: "~/.config/opencode/fix-patterns.md"
+    estimated_tokens: 4000
+    description: "FIX-001~FIX-012 修复模式 + DECISION-000~002 决策模式"
+    refresh_on: "startup"         # 仅启动时加载
+    
+  - file: "knowledge/index.md"
+    path: "~/.config/opencode/knowledge/index.md"
+    estimated_tokens: 3000
+    description: "K001~K014 知识条目索引 + U001~U005 不可修复模式"
+    refresh_on: "file_change"
+    
+  - file: "decision-rules.yaml"
+    path: "~/.config/opencode/decision-rules.yaml"
+    estimated_tokens: 2500
+    description: "13 条自动授权决策规则"
+    refresh_on: "file_change"
+    
+  - file: "noise-patterns.yaml"
+    path: "~/.config/opencode/skills/sls-log-analysis/noise-patterns.yaml"
+    estimated_tokens: 1000
+    description: "全局 + 各服务噪声过滤规则"
+    refresh_on: "file_change"
+
+# 可选预加载 (按需，不自动加载)
+optional_preload:
+  - file: "services/{service}-knowledge.md"
+    path: "~/.config/opencode/knowledge/services/{service}-knowledge.md"
+    estimated_tokens: 2000
+    description: "服务特定知识(已知陷阱, 踩过的坑)"
+    load_on: "skill_dispatch"     # 当对应 Skill 被触发时才加载
+
+# 缓存引用语法
+# 在 Skill prompt 中，使用 L1_CACHE_REF 引用缓存条目，而非内联全文:
+# 
+# 旧方式 (每次 task() 传 4K tokens):
+#   task(prompt="已知服务列表: {全文 known-services.yaml}...")
+#
+# 新方式 (每次 task() 传 ~100 tokens):
+#   task(prompt="已知服务: L1_CACHE(key='known-services.yaml').match('{service}')")
+#
+# Agent 通过 L1_CACHE 宏访问会话级缓存，聚合内容在启动时一次性加载
+
+# 缓存失效
+invalidation:
+  - trigger: "file_change"       # 源文件修改后，下次 task() 前刷新
+  - trigger: "session_expiry"    # 会话结束时清除
+  - trigger: "manual_flush"      # 用户 /flush-cache 命令

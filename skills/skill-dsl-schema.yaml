@@ -1,0 +1,240 @@
+# Skill DAG DSL Schema
+# Version: 1.0.0
+# Purpose: Define structured, executable DAG-based skills for opencode agents.
+# Modeled after stargate's SkillDefinition + GenericSkillExecutor pattern.
+#
+# A Skill DAG is a directed acyclic graph of steps. Each step is one of the
+# 7 supported step types. Steps in the same topological layer run in parallel.
+# The executor performs topological sort, then executes layers sequentially
+# with parallel step dispatch within each layer.
+
+# =============================================================================
+# Skill Metadata
+# =============================================================================
+skill_metadata:
+  slug: "string (required) — unique identifier, e.g. 'production-incident-fix'"
+  name: "string (required) — display name"
+  version: "integer (default 1)"
+  description: "string — what this skill does and when to use it"
+  category: "string — e.g. 'incident', 'analysis', 'review', 'devops'"
+  trigger_keywords: "string[] — keywords that trigger this skill"
+  required_role: "string | null — RBAC role if restricted"
+
+# =============================================================================
+# Governance (Skill-level)
+# =============================================================================
+governance:
+  budget_usd: "number (default 0 = unlimited) — max USD cost per execution"
+  budget_chunks: "integer (default 0 = unlimited) — max LLM chunks per execution"
+  timeout_seconds: "integer (default 300) — global skill timeout"
+  max_retries: "integer (default 2) — global retry count"
+  allowed_tools: "string[] | null — tool allowlist, null = all"
+  allowed_http_domains: "string[] | null — HTTP domain allowlist"
+  abort_on_critical: "boolean (default true) — abort skill if critical step fails"
+
+# =============================================================================
+# Input / Output Schema
+# =============================================================================
+input_schema:
+  type: "object"
+  description: "JSON Schema describing expected input parameters"
+  # properties: ...
+
+output_schema:
+  type: "object"
+  description: "JSON Schema describing expected output shape"
+  # properties: ...
+
+# =============================================================================
+# Status Lifecycle
+# =============================================================================
+# ┌─────────┐    ┌────────┐    ┌─────────┐
+# │ pending │───▶│ queued │───▶│ running │
+# └─────────┘    └────────┘    └────┬────┘
+#                                   │
+#                    ┌──────────────┼──────────────┐
+#                    ▼              ▼              ▼
+#              ┌──────────┐ ┌───────────┐ ┌──────────────┐
+#              │   done   │ │   error   │ │  cancelled   │
+#              └──────────┘ └───────────┘ └──────────────┘
+#                                   │
+#                            ┌──────▼──────┐
+#                            │  retrying   │ (transient, returns to running)
+#                            └─────────────┘
+#
+# Gate step pauses execution:
+#   running ──▶ waiting_approval ──▶ running (on resume) / cancelled
+
+# =============================================================================
+# Step Types
+# =============================================================================
+step_types:
+
+  # --- mcp_tool ---
+  # Call any registered MCP tool.
+  mcp_tool:
+    description: "Execute a single MCP tool call"
+    config_fields:
+      tool: "string (required) — fully qualified tool name, e.g. 'Sls-20201230-GetLogsV2'"
+      arguments: "object — tool parameters"
+      output_mapping: "object | null — map tool response keys to step output keys"
+    id: "string (required)"
+    depends_on: "string[] (default [])"
+    timeout_seconds: "integer (default 120)"
+    retry_policy:
+      max_attempts: "integer (default 1)"
+      backoff_base: "integer (default 2) — seconds"
+      backoff_multiplier: "integer (default 2)"
+      retryable_statuses: "integer[] — HTTP status codes that trigger retry"
+    on_failure: "enum: 'abort' | 'skip' | 'continue' | 'degrade' (default 'abort')"
+
+  # --- llm_call ---
+  # Send messages to an LLM via OpenRouter.
+  llm_call:
+    description: "Call an LLM model with structured messages"
+    config_fields:
+      model: "string (required) — model ID, e.g. 'openrouter/anthropic/claude-sonnet-4'"
+      messages: "array of {role, content} — conversation messages"
+      prompt_slug: "string | null — reference to a named prompt template"
+      temperature: "number (default 0.7)"
+      max_tokens: "integer (default 4096)"
+      response_format: "object | null — e.g. {type: 'json_object'}"
+    id: "string (required)"
+    depends_on: "string[] (default [])"
+    timeout_seconds: "integer (default 120)"
+    retry_policy: "{same as mcp_tool}"
+    on_failure: "enum: 'abort' | 'skip' | 'continue' | 'degrade' (default 'abort')"
+
+  # --- sub_skill ---
+  # Invoke another skill as a sub-execution.
+  sub_skill:
+    description: "Delegates to a child skill execution"
+    config_fields:
+      slug: "string (required) — skill slug to invoke"
+      input_data: "object — data passed to the sub-skill"
+      mode: "enum: 'await' | 'fire_and_forget' (default 'await')"
+      poll_interval: "number (default 2.0) — seconds between status polls"
+      max_wait: "number (default 600.0) — max seconds to wait for sub-skill"
+    id: "string (required)"
+    depends_on: "string[] (default [])"
+    timeout_seconds: "integer (default 600)"
+    retry_policy: "{same as mcp_tool}"
+    on_failure: "enum: 'abort' | 'skip' | 'continue' | 'degrade' (default 'abort')"
+
+  # --- gate ---
+  # Pause execution for human approval.
+  gate:
+    description: "Halts DAG execution until human approval is given"
+    config_fields:
+      message: "string — approval request message"
+      options: "string[] — e.g. ['approve', 'reject', 'skip']"
+      default_option: "string — what happens on timeout"
+      timeout_seconds: "integer — gate approval timeout"
+    id: "string (required)"
+    depends_on: "string[] (default [])"
+    on_failure: "enum: 'abort' | 'skip' (default 'abort')"
+
+  # --- kg_query ---
+  # Query the Nebula knowledge graph.
+  kg_query:
+    description: "Search the knowledge graph for concepts, services, data entities"
+    config_fields:
+      keywords: "string[] — concepts/terms to search for"
+      limit: "integer (default 10)"
+      include_relations: "boolean (default false)"
+    id: "string (required)"
+    depends_on: "string[] (default [])"
+    timeout_seconds: "integer (default 60)"
+    retry_policy: "{same as mcp_tool}"
+    on_failure: "enum: 'abort' | 'skip' | 'continue' | 'degrade' (default 'skip')"
+
+  # --- http_call ---
+  # Make an HTTP request to an allowed domain.
+  http_call:
+    description: "Call an external HTTP API (domain must be in allowlist)"
+    config_fields:
+      url: "string (required)"
+      method: "enum: GET | POST | PUT | DELETE | PATCH (default 'GET')"
+      headers: "object"
+      body: "object"
+    id: "string (required)"
+    depends_on: "string[] (default [])"
+    timeout_seconds: "integer (default 30)"
+    retry_policy: "{same as mcp_tool}"
+    on_failure: "enum: 'abort' | 'skip' | 'continue' | 'degrade' (default 'abort')"
+
+  # --- custom ---
+  # Call a registered Python step function.
+  custom:
+    description: "Execute a registered custom step function"
+    config_fields:
+      function: "string (required) — registered function ID"
+      arguments: "object — arguments passed to the function"
+    id: "string (required)"
+    depends_on: "string[] (default [])"
+    timeout_seconds: "integer (default 120)"
+    retry_policy: "{same as mcp_tool}"
+    on_failure: "enum: 'abort' | 'skip' | 'continue' | 'degrade' (default 'abort')"
+
+# =============================================================================
+# Reference Resolution
+# =============================================================================
+# Step configs support `${steps.<step_id>.<path>}` and `${input.<path>}` refs.
+# These are resolved at execution time before dispatching the step.
+#
+# Examples:
+#   "${steps.sls_fetch.result.total_count}"
+#   "${input.service}"
+#   "${steps.jira_create.output.issue_key}"
+
+# =============================================================================
+# Conditional Execution
+# =============================================================================
+# Steps support a `when` expression for conditional execution.
+# Syntax: boolean expression using ${refs}, ==, !=, <, >, <=, >=, and, or, not
+#
+# Examples:
+#   when: "${steps.sls_fetch.result.error_count} > 0"
+#   when: "${input.include_db_check} == true"
+#   when: "${steps.gate.approved} == true"
+
+# =============================================================================
+# On-Failure Behavior
+# =============================================================================
+# | Strategy | Description                                         |
+# |----------|-----------------------------------------------------|
+# | abort    | Halt entire skill execution                         |
+# | skip     | Skip this step, mark as skipped, continue DAG       |
+# | continue | Mark as error but continue DAG (best-effort)        |
+# | degrade  | Use previous step output, log warning, continue     |
+
+# =============================================================================
+# DAG Validation Rules
+# =============================================================================
+# 1. All step IDs must be unique
+# 2. All depends_on targets must reference existing step IDs
+# 3. DAG must have no cycles (validated via topological sort)
+# 4. At least one step must exist
+# 5. When expressions must be parseable
+
+# =============================================================================
+# Runtime Field Reference (used in step configs)
+# =============================================================================
+# Steps may include these extra runtime fields (not in schema validation):
+#
+#   description: "string — human-readable step description"
+#   outputs:      mapping — JSONPath → output key mapping for downstream refs
+#   when:         "string — conditional execution expression"
+#
+# Example outputs:
+#   outputs:
+#     issue_key: "$.key"
+#     issue_id:  "$.id"
+#
+# Example when:
+#   when: "${steps.sls_analyze.output.requires_db_check} == true"
+#
+# The executor uses these at runtime:
+#   - outputs: extract values from step result → store in step_states[id].output
+#   - when: evaluate before executing step; skip step if false
+#   - description: log/display during execution

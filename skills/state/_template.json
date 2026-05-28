@@ -1,0 +1,46 @@
+{
+  "$schema": "../skill-dsl-schema.yaml",
+  "_description": "Skill execution state template. Created at execution start, updated after each step completes.",
+  "execution_id": "string — {skill_slug}-{YYYYMMDD}-{HHMMSS}",
+  "skill_slug": "string",
+  "status": "pending",
+  "status_history": [],
+  "input": {},
+  "governance": {
+    "budget_usd": 0,
+    "consumed_usd": 0,
+    "budget_chunks": 0,
+    "chunks_consumed": 0,
+    "timeout_seconds": 0,
+    "started_at": null,
+    "completed_at": null,
+    "expires_at": null,
+    "paused_at": null
+  },
+  "chain": {
+    "chain_id": null,
+    "chain_index": 0,
+    "chain_total": 1,
+    "parent_execution_id": null
+  },
+  "dag": {
+    "total_steps": 0,
+    "layer_count": 0,
+    "dependency_graph": {}
+  },
+  "layers": [],
+  "step_states": {},
+  "errors": [],
+  "warnings": [],
+  "metrics": {
+    "total_steps": 0,
+    "completed_steps": 0,
+    "failed_steps": 0,
+    "skipped_steps": 0,
+    "degraded_steps": 0,
+    "llm_calls": 0,
+    "mcp_calls": 0,
+    "tokens_in": 0,
+    "tokens_out": 0
+  }
+}

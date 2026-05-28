@@ -1,0 +1,241 @@
+# 自动授权决策规则引擎配置文件
+# 
+# 版本：v1.0-experiment
+# 更新：修改此文件后重启 opencode 生效
+# 实验模式：dry_run=true 时只记录决策不实际执行
+
+version: "1.0"
+experiment_mode:
+  enabled: true                    # true=只记录不执行, false=真正自动授权
+  dry_run_duration_days: 14       # 实验期 14 天
+  start_date: "2026-05-15"
+
+rules:
+  # ==========================================================
+  # 规则 1: 代码变更规模限制
+  # ==========================================================
+  - id: "diff-size-limit"
+    description: "限制单次自动修复的代码变更规模"
+    applies_to: ["fix-agent"]
+    priority: 1                    # 1=最高优先级, 数字越小越优先
+    conditions:
+      - field: "changed_lines"
+        operator: "lte"            # less than or equal
+        value: 200                 # 最多 200 行变更
+      - field: "files_count"
+        operator: "lte"
+        value: 7                   # 最多 7 个文件
+    action: "approve"
+
+  - id: "diff-size-reject"
+    description: "超过规模的变更拒绝自动合并，转人工"
+    applies_to: ["fix-agent"]
+    priority: 2
+    conditions:
+      - field: "changed_lines"
+        operator: "gt"             # greater than
+        value: 500                 # 超过 500 行
+    action: "reject"
+    reject_action: "escalate"      # 升级到人工
+
+  # ==========================================================
+  # 规则 2: 置信度门槛
+  # ==========================================================
+  - id: "confidence-auto-merge"
+    description: "高置信度 (>0.95) 的修复自动合并"
+    applies_to: ["fix-agent", "review-agent"]
+    priority: 3
+    conditions:
+      - field: "fix_confidence"
+        operator: "gte"            # greater than or equal
+        value: 0.95
+      - field: "score"
+        operator: "gte"
+        value: 8
+      - field: "verdict"
+        operator: "eq"
+        value: "APPROVED"
+    action: "approve"              # 无需审批，直接合并
+    auto_merge: true
+
+  - id: "confidence-needs-approval"
+    description: "中等置信度 (0.80-0.95) 自动提交 MR 但需要审批"
+    applies_to: ["fix-agent", "review-agent"]
+    priority: 4
+    conditions:
+      - field: "fix_confidence"
+        operator: "between"
+        value: [0.80, 0.95]
+    action: "approve"
+    auto_merge: false
+    require_approval: true
+    approvers: ["xiaokang.sun"]
+
+  - id: "confidence-too-low"
+    description: "低置信度 (<0.80) 的修复拒绝自动执行"
+    applies_to: ["fix-agent"]
+    priority: 5
+    conditions:
+      - field: "fix_confidence"
+        operator: "lt"
+        value: 0.80
+    action: "reject"
+    reject_action: "escalate"
+
+  # ==========================================================
+  # 规则 3: 测试结果
+  # ==========================================================
+  - id: "test-must-pass"
+    description: "所有测试必须通过才允许提交"
+    applies_to: ["test-agent"]
+    priority: 6
+    conditions:
+      - field: "tests_failed"
+        operator: "eq"
+        value: 0
+      - field: "coverage_happy_path"
+        operator: "eq"
+        value: true
+      - field: "coverage_null_input"
+        operator: "eq"
+        value: true
+      - field: "coverage_exception_path"
+        operator: "eq"
+        value: true
+    action: "approve"
+
+  - id: "test-failure-reject"
+    description: "测试失败绝对不自动合并"
+    applies_to: ["test-agent"]
+    priority: 7
+    conditions:
+      - field: "tests_failed"
+        operator: "gt"
+        value: 0
+    action: "reject"
+    reject_action: "block"
+
+  # ==========================================================
+  # 规则 4: 错误类型白名单 (只自动修复已知类型)
+  # ==========================================================
+  - id: "known-error-patterns-only"
+    description: "只自动修复已知的错误类型，新错误转人工"
+    applies_to: ["analyze-agent"]
+    priority: 8
+    conditions:
+      - field: "error_types"
+        operator: "subset_of"      # 所有错误类型必须在已知列表中
+        value:
+          - "Jackson deserialization unknown field"
+          - "Redis connection pool exhausted"
+          - "Feign null path variable"
+          - "Distributed lock race condition"
+          - "Scheduled task lock leak"
+          - "MNO gateway non-success response"
+          - "Serializer mismatch"
+          - "NumberFormatException in counter"
+    action: "approve"
+
+  - id: "unknown-error-escalate"
+    description: "遇到未知错误类型时升级人工"
+    applies_to: ["analyze-agent"]
+    priority: 9
+    conditions:
+      - field: "has_unknown_error_types"
+        operator: "eq"
+        value: true
+    action: "reject"
+    reject_action: "escalate"
+    notify_channels: ["feishu", "jira"]
+
+  # ==========================================================
+  # 规则 5: 时间窗口限制 (非工作时间只分析不修复)
+  # ==========================================================
+  - id: "business-hours-only"
+    description: "代码变更类操作仅在工作时间自动执行"
+    applies_to: ["fix-agent", "deploy-agent"]
+    priority: 10
+    conditions:
+      - field: "current_hour"
+        operator: "between"
+        value: [9, 21]             # 9:00-21:00
+      - field: "current_day_of_week"
+        operator: "between"
+        value: [1, 5]              # 周一至周五
+    action: "approve"
+
+  - id: "off-hours-analyze-only"
+    description: "非工作时间只分析并生成报告，不执行修复"
+    applies_to: ["fix-agent", "deploy-agent"]
+    priority: 11
+    conditions:
+      - field: "current_hour"
+        operator: "not_between"
+        value: [9, 21]
+    action: "reject"
+    reject_action: "defer"         # 延迟到工作时间
+
+  # ==========================================================
+  # 规则 6: 回滚安全检查
+  # ==========================================================
+  - id: "rollback-safety"
+    description: "确保有回滚方案才允许自动部署"
+    applies_to: ["deploy-agent"]
+    priority: 12
+    conditions:
+      - field: "has_rollback_plan"
+        operator: "eq"
+        value: true
+    action: "approve"
+
+  # ==========================================================
+  # 规则 7: 频率限制 (防止刷屏)
+  # ==========================================================
+  - id: "rate-limit"
+    description: "同一错误类型 24 小时内最多自动修复 3 次"
+    applies_to: ["fix-agent"]
+    priority: 13
+    conditions:
+      - field: "same_error_fix_count_24h"
+        operator: "lt"
+        value: 3
+    action: "approve"
+
+  # ==========================================================
+  # 默认规则：拒绝一切 (兜底)
+  # ==========================================================
+  - id: "default-deny"
+    description: "默认拒绝所有未明确允许的操作"
+    applies_to: ["*"]
+    priority: 999
+    conditions: []                 # 无条件匹配
+    action: "reject"
+    reject_action: "escalate"
+
+# ==========================================================
+# 通知配置
+# ==========================================================
+notifications:
+  feishu:
+    webhook_url: ""                # 配置飞书机器人 Webhook URL 后启用通知
+    mention_users: ["xiaokang.sun"]
+    
+  jira:
+    default_assignee: "xiaokang.sun"
+    escalation_label: "auto-fix-escalated"
+
+# ==========================================================
+# 实验期数据采集
+# ==========================================================
+experiment_metrics:
+  collect:
+    - total_decisions
+    - approve_count
+    - reject_count
+    - escalate_count
+    - false_positive_count       # 应该拒绝但放行的
+    - false_negative_count       # 应该放行但拒绝的
+    - avg_decision_time_ms
+    - rule_hit_distribution
+  report_interval: "24h"
+  report_destination: "feishu"
