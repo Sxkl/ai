@@ -613,6 +613,8 @@ Mode: dry_run"
 | `production-incident-fix` | 生产报错、SLS日志、代码修复、P4 | `skills/production-incident-fix/skill-dag.json` |
 | `code-review` | 提交、commit、push、MR、merge、评审、review | `skills/code-review/skill-dag.json` |
 | `sls-log-analysis` | 日志梳理、log analysis、全级别扫描、SLS分析 | `skills/sls-log-analysis/skill-dag.json` |
+| `standard-requirement-dev-prep` | 开发、需求、P4、任务、PR- | `skills/standard-requirement-dev-prep/SKILL.md` |
+| `harness-fullstack-dev` | 全栈开发、前后端、Harness DAG、架构分析、方案设计 | `dev-harness` agent (DAG) |
 
 ### 状态文件位置
 
