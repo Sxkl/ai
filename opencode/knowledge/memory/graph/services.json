@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "last_updated": "2026-05-20T01:30:00Z",
+  "nodes": [
+    {
+      "id": "contract-service",
+      "type": "Service",
+      "properties": {
+        "language": "java",
+        "framework": "spring-boot",
+        "redis_version": "7.2",
+        "known_traps": [
+          "@Transactional+@DS conflict",
+          "Redis pool exhaustion on RollingUpdate",
+          "Zombie RedisMessageListenerContainer"
+        ],
+        "top_errors": [
+          "JacksonDeser",
+          "RedisLockRace",
+          "ESUpsert",
+          "TransactionalDSConflict"
+        ]
+      }
+    },
+    {
+      "id": "sim-service",
+      "type": "Service",
+      "properties": {
+        "language": "java",
+        "framework": "spring-boot",
+        "known_traps": ["Redis lock race", "Jackson deserialization"],
+        "top_errors": ["JacksonDeser", "NullCheck", "RedisLockRace"]
+      }
+    },
+    {
+      "id": "cube-server",
+      "type": "Service",
+      "properties": {
+        "language": "java",
+        "framework": "spring-boot",
+        "known_traps": ["ParallelStream NPE"],
+        "top_errors": ["ParallelStreamNPE", "JacksonDeser"]
+      }
+    }
+  ]
+}

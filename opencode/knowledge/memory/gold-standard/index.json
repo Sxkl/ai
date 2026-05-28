@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "last_updated": "2026-05-20T01:30:00Z",
+  "entries": {
+    "JacksonDeser": ["fix-jackson-deser/001.md"],
+    "NullCheck": ["fix-null-check/001.md"],
+    "RedisLockRace": ["fix-redis-lock/001.md"],
+    "ESUpsert": ["fix-es-upsert/001.md"],
+    "ErrorToWarn": ["fix-error-to-warn/001.md"],
+    "ParallelStreamNPE": ["fix-thread-safety/001.md"]
+  },
+  "stats": {
+    "total_entries": 6,
+    "average_score": 9.2,
+    "highest_score_entry": "fix-jackson-deser/001.md (score: 10)"
+  }
+}

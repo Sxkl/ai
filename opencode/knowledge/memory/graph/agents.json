@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "last_updated": "2026-05-20T01:30:00Z",
+  "nodes": [
+    {"id": "coordinator", "type": "Agent", "properties": {"role": "primary", "mode": "orchestrator", "triggers": "production-incident-fix, sls-log-analysis"}},
+    {"id": "analyze-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "5/10", "capability": "root_cause_analysis"}},
+    {"id": "fix-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "6/10", "capability": "code_fix"}},
+    {"id": "review-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "7-9/10", "capability": "three_round_review"}},
+    {"id": "test-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "10/10", "capability": "unit_test"}},
+    {"id": "deploy-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "deploy", "capability": "git_mr_jira"}},
+    {"id": "sls-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "2/10", "capability": "log_pulling"}},
+    {"id": "jira-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "jira", "capability": "ticket_management"}},
+    {"id": "io-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "io", "capability": "git_file_operations"}},
+    {"id": "db-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "db", "capability": "schema_query"}},
+    {"id": "decision-engine", "type": "Agent", "properties": {"role": "subagent", "phase": "decision", "capability": "multi_model_routing"}},
+    {"id": "cost-tracker", "type": "Agent", "properties": {"role": "subagent", "phase": "tracking", "capability": "cost_metrics"}},
+    {"id": "self-improve-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "memory", "capability": "rlhf_learning", "status": "new"}},
+    {"id": "memory-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "memory", "capability": "dual_memory", "status": "new"}},
+    {"id": "meta-cognitive-agent", "type": "Agent", "properties": {"role": "subagent", "phase": "pre-action", "capability": "safety_guard", "status": "new"}}
+  ],
+  "edges": [
+    {"source": "coordinator", "target": "analyze-agent", "type": "DISPATCHES_TO"},
+    {"source": "coordinator", "target": "fix-agent", "type": "DISPATCHES_TO"},
+    {"source": "coordinator", "target": "review-agent", "type": "DISPATCHES_TO"},
+    {"source": "coordinator", "target": "test-agent", "type": "DISPATCHES_TO"},
+    {"source": "coordinator", "target": "deploy-agent", "type": "DISPATCHES_TO"},
+    {"source": "coordinator", "target": "sls-agent", "type": "DISPATCHES_TO"},
+    {"source": "coordinator", "target": "self-improve-agent", "type": "ENHANCED_BY"},
+    {"source": "coordinator", "target": "memory-agent", "type": "ENHANCED_BY"},
+    {"source": "coordinator", "target": "meta-cognitive-agent", "type": "GUARDED_BY"},
+    {"source": "decision-engine", "target": "analyze-agent", "type": "ROUTES_TO"},
+    {"source": "self-improve-agent", "target": "fix-agent", "type": "IMPROVES"},
+    {"source": "self-improve-agent", "target": "review-agent", "type": "FEEDS_SCORE"},
+    {"source": "memory-agent", "target": "self-improve-agent", "type": "PROVIDES_MEMORY"},
+    {"source": "meta-cognitive-agent", "target": "coordinator", "type": "PROTECTS"}
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "last_updated": "2026-05-20T01:30:00Z",
+  "nodes": [
+    {"id": "JacksonDeser", "type": "ErrorPattern", "properties": {"severity": "Critical", "frequency": "high", "services_affected": 3}},
+    {"id": "NullCheck", "type": "ErrorPattern", "properties": {"severity": "High", "frequency": "medium", "services_affected": 2}},
+    {"id": "RedisLockRace", "type": "ErrorPattern", "properties": {"severity": "Critical", "frequency": "medium", "services_affected": 2}},
+    {"id": "ESUpsert", "type": "ErrorPattern", "properties": {"severity": "High", "frequency": "low", "services_affected": 1}},
+    {"id": "ErrorToWarn", "type": "ErrorPattern", "properties": {"severity": "Low", "frequency": "high", "services_affected": 3}},
+    {"id": "ParallelStreamNPE", "type": "ErrorPattern", "properties": {"severity": "High", "frequency": "medium", "services_affected": 1}},
+    {"id": "TransactionalDSConflict", "type": "ErrorPattern", "properties": {"severity": "Critical", "frequency": "low", "services_affected": 1}},
+    {"id": "PrintStackTrace", "type": "ErrorPattern", "properties": {"severity": "Medium", "frequency": "medium", "services_affected": 3}},
+    {"id": "LoggerNullMessage", "type": "ErrorPattern", "properties": {"severity": "Low", "frequency": "low", "services_affected": 2}},
+    {"id": "FeignNullGuard", "type": "ErrorPattern", "properties": {"severity": "Medium", "frequency": "low", "services_affected": 1}},
+    {"id": "ResponseNullCheck", "type": "ErrorPattern", "properties": {"severity": "High", "frequency": "medium", "services_affected": 2}},
+    {"id": "SerializationInconsistency", "type": "ErrorPattern", "properties": {"severity": "High", "frequency": "low", "services_affected": 1}},
+    {"id": "RedisPoolExhaustion", "type": "ErrorPattern", "properties": {"severity": "Critical", "frequency": "event-based", "services_affected": 1}}
+  ],
+  "nodes_fix": [
+    {"id": "JsonIgnoreProperties", "type": "FixPattern", "properties": {"category": "annotation", "confidence": 0.98, "verified": true}},
+    {"id": "NullGuardPattern", "type": "FixPattern", "properties": {"category": "defensive", "confidence": 0.92, "verified": true}},
+    {"id": "LuaScriptAtomic", "type": "FixPattern", "properties": {"category": "thread-safety", "confidence": 0.95, "verified": true}},
+    {"id": "DocAsUpsert", "type": "FixPattern", "properties": {"category": "config", "confidence": 0.90, "verified": true}},
+    {"id": "LogLevelDowngrade", "type": "FixPattern", "properties": {"category": "logging", "confidence": 0.85, "verified": true}},
+    {"id": "FilterNonNull", "type": "FixPattern", "properties": {"category": "stream", "confidence": 0.88, "verified": true}},
+    {"id": "LogParametrized", "type": "FixPattern", "properties": {"category": "logging", "confidence": 0.90, "verified": true}},
+    {"id": "LogReplacePrintStack", "type": "FixPattern", "properties": {"category": "logging", "confidence": 0.95, "verified": true}},
+    {"id": "RedisPoolSizing", "type": "FixPattern", "properties": {"category": "config", "confidence": 0.85, "verified": false}}
+  ],
+  "nodes_unfixable": [
+    {"id": "BBC_Upstream", "type": "Unfixable", "properties": {"reason": "BBC upstream returns operation failure", "tag": "UPSTREAM"}},
+    {"id": "Feign_404", "type": "Unfixable", "properties": {"reason": "Downstream endpoint does not exist", "tag": "UPSTREAM"}},
+    {"id": "DS_Routing", "type": "Unfixable", "properties": {"reason": "@DS annotation points to wrong database", "tag": "CONFIG"}},
+    {"id": "BillingMiddlewareVersion", "type": "Unfixable", "properties": {"reason": "billing-middleware version mismatch", "tag": "DEPENDENCY"}},
+    {"id": "AuthingInvalidUser", "type": "Unfixable", "properties": {"reason": "Upstream passes invalid user ID", "tag": "DATA"}}
+  ],
+  "edges": [
+    {"source": "contract-service", "target": "JacksonDeser", "type": "HAS_ERROR", "properties": {"frequency": "daily", "severity": "P1"}},
+    {"source": "sim-service", "target": "JacksonDeser", "type": "HAS_ERROR", "properties": {"frequency": "daily", "severity": "P1"}},
+    {"source": "cube-server", "target": "JacksonDeser", "type": "HAS_ERROR", "properties": {"frequency": "weekly", "severity": "P2"}},
+    {"source": "JacksonDeser", "target": "JsonIgnoreProperties", "type": "FIXED_BY", "properties": {"confidence": 0.98, "verified": true}},
+    {"source": "contract-service", "target": "RedisLockRace", "type": "HAS_ERROR", "properties": {"frequency": "event-based", "severity": "P0"}},
+    {"source": "sim-service", "target": "RedisLockRace", "type": "HAS_ERROR", "properties": {"frequency": "event-based", "severity": "P0"}},
+    {"source": "RedisLockRace", "target": "LuaScriptAtomic", "type": "FIXED_BY", "properties": {"confidence": 0.95, "verified": true}},
+    {"source": "contract-service", "target": "ESUpsert", "type": "HAS_ERROR", "properties": {"frequency": "weekly", "severity": "P2"}},
+    {"source": "ESUpsert", "target": "DocAsUpsert", "type": "FIXED_BY", "properties": {"confidence": 0.90, "verified": true}},
+    {"source": "contract-service", "target": "TransactionalDSConflict", "type": "HAS_ERROR", "properties": {"frequency": "monthly", "severity": "P0"}},
+    {"source": "sim-service", "target": "NullCheck", "type": "HAS_ERROR", "properties": {"frequency": "daily", "severity": "P1"}},
+    {"source": "NullCheck", "target": "NullGuardPattern", "type": "FIXED_BY", "properties": {"confidence": 0.92, "verified": true}},
+    {"source": "cube-server", "target": "ParallelStreamNPE", "type": "HAS_ERROR", "properties": {"frequency": "weekly", "severity": "P1"}},
+    {"source": "ParallelStreamNPE", "target": "FilterNonNull", "type": "FIXED_BY", "properties": {"confidence": 0.88, "verified": true}},
+    {"source": "contract-service", "target": "RedisPoolExhaustion", "type": "HAS_ERROR", "properties": {"frequency": "event-based", "severity": "P0"}},
+    {"source": "RedisPoolExhaustion", "target": "RedisPoolSizing", "type": "FIXED_BY", "properties": {"confidence": 0.85, "verified": false}}
+  ]
+}

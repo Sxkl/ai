@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "last_updated": "2026-05-20T01:30:00Z",
+  "summary": {
+    "total_examples": 6,
+    "task_types": 6,
+    "average_first_draft_score": 0,
+    "average_final_score": 9.2,
+    "revision_rate": 0,
+    "quality_trend": "seeded",
+    "total_services": 3,
+    "total_error_patterns": 13,
+    "total_fix_patterns": 9,
+    "total_unfixable_patterns": 5,
+    "total_agents": 15,
+    "total_sessions_recorded": 0,
+    "total_semantic_nodes": 42,
+    "total_semantic_edges": 34
+  }
+}
