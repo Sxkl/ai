@@ -97,6 +97,43 @@ v4 核心变化:
 
 ## Execution Modes
 
+### Pipeline DAG
+```yaml
+pipeline:
+  max_revision_rounds: 3
+  quality_threshold: 7
+  stages:
+    - stage: 0
+      id: security_scan
+      depends_on: []
+      timeout: 30s
+      on_fail: BLOCK
+    - stage: 1
+      id: mental_simulate
+      depends_on: [security_scan]
+      timeout: 60s
+      gate: risk_level != 'HIGH'
+    - stage: 2
+      id: read_files
+      depends_on: [mental_simulate]
+      timeout: 60s
+    - stage: 3
+      id: apply_fix
+      depends_on: [read_files]
+      timeout: 300s
+      on_fail: RETRY_ONCE
+    - stage: 4
+      id: self_review
+      depends_on: [apply_fix]
+      timeout: 60s
+      on_fail: RETURN_TO_STAGE_3
+    - stage: 5
+      id: revision_check
+      depends_on: [self_review]
+      condition: revision_round > 1
+      timeout: 30s
+```
+
 ### Mode A: Initial Fix (round 1)
 ### Mode B: Revision Fix (round 2+)
 (同 v3)

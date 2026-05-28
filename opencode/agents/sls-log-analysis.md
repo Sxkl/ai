@@ -170,6 +170,49 @@ LQS = ErrorHealth(0-40) + WarnQuality(0-20) + InfoSNR(0-20) - AntiPatternPenalty
 
 ## Workflow Steps
 
+### Pipeline DAG
+```yaml
+pipeline:
+  max_parallel: 2
+  on_failure: continue
+  stages:
+    - stage: 1
+      id: jira_prep
+      depends_on: []
+      timeout: 30s
+    - stage: 2
+      id: sls_pull
+      depends_on: [jira_prep]
+      agent: sls-agent
+      timeout: 300s
+    - stage: 3
+      id: classify
+      depends_on: [sls_pull]
+      agent: analyze-agent
+      timeout: 120s
+    - stage: 4a
+      id: pattern_analyze
+      depends_on: [classify]
+      agent: analyze-agent
+      timeout: 180s
+    - stage: 4b
+      id: pattern_match
+      depends_on: [classify]
+      agent: hybrid-search-agent
+      timeout: 60s
+      parallel: true
+    - stage: 5
+      id: report
+      depends_on: [pattern_analyze, pattern_match]
+      agent: jira-agent
+      timeout: 120s
+    - stage: 6
+      id: jira_upload
+      depends_on: [report]
+      agent: jira-agent
+      timeout: 60s
+```
+
 ### Step 1: 创建 Jira 分析工单
 
 首次扫描创建新工单；7天内增量扫描追加评论到同一工单。

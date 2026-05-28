@@ -14,6 +14,33 @@ AI Chat → Brewer → Distiller → Taster → GitLab → Crossfire → Destroy
                                                     ⑥
 ```
 
+### Pipeline DAG
+```yaml
+pipeline:
+  rounds: 3
+  on_failure: escalate
+  stages:
+    - round: 1
+      id: prd_compliance
+      reviewer: claude-sonnet-4-6
+      depends_on: []
+      timeout: 300s
+      checks: [需求覆盖, API契约, 数据结构]
+    - round: 2
+      id: architecture_safety
+      reviewer: deepseek-v4-pro-max
+      depends_on: [prd_compliance]
+      timeout: 300s
+      checks: [SQL注入, 权限校验, 事务边界, 缓存一致性]
+    - round: 3
+      id: production_readiness
+      reviewer: claude-sonnet-4-6
+      depends_on: [architecture_safety]
+      timeout: 300s
+      checks: [日志完整性, 监控埋点, 回滚方案, 性能影响]
+      gate: overall_score >= 7
+```
+
 ## 核心理念
 
 > **实现代码 vs 需求 PRD**，从多个角度交叉验证，像交叉火力一样全面覆盖。三个 reviewer 各自独立审视，最后汇总裁决。

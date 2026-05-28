@@ -77,6 +77,68 @@ Sprint: 自动查找当前 active sprint
 
 ## Workflow Steps
 
+### Pipeline DAG
+```yaml
+pipeline:
+  max_parallel: 2
+  on_failure: continue
+  stages:
+    - stage: 1
+      id: git_prep
+      depends_on: []
+      timeout: 60s
+    - stage: 2
+      id: jira_check
+      depends_on: []
+      timeout: 30s
+    - stage: 3
+      id: sls_pull
+      depends_on: [git_prep, jira_check]
+      agent: sls-agent
+      timeout: 300s
+      on_fail: RETRY_ONCE
+    - stage: 4
+      id: db_verify
+      depends_on: [sls_pull]
+      agent: db-agent
+      timeout: 180s
+      optional: true
+    - stage: 5
+      id: analyze
+      depends_on: [sls_pull, db_verify]
+      agent: analyze-agent
+      timeout: 300s
+    - stage: 6
+      id: fix
+      depends_on: [analyze]
+      agent: fix-agent
+      timeout: 600s
+      on_fail: RETURN_TO_STAGE_5
+    - stage: 7
+      id: crossfire
+      depends_on: [fix]
+      agent: crossfire
+      timeout: 600s
+      rounds: 3
+    - stage: 8
+      id: test
+      depends_on: [crossfire]
+      agent: test-agent
+      timeout: 600s
+      on_fail: RETURN_TO_STAGE_6
+    - stage: 9
+      id: deploy
+      depends_on: [test]
+      agent: deploy-agent
+      timeout: 180s
+      gate: crossfire_score >= 7
+    - stage: 10
+      id: jira_report
+      depends_on: [deploy]
+      agent: jira-agent
+      timeout: 60s
+```
+
 ### Step 1: Git 准备
 
 1. Clone the service repo to workspace (if not already present)

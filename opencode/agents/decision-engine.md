@@ -11,6 +11,45 @@ permission:
 
 # Decision Engine Agent v2 — 按问题级别动态裁决
 
+### Pipeline DAG
+```yaml
+pipeline:
+  auto_level: true
+  on_failure: escalate_to_human
+  stages:
+    # L1 简单 (rounds=3)
+    L1:
+      - round: 1
+        id: r1_propose
+        model: claude-sonnet-4-6
+        role: 正方提案
+        depends_on: []
+      - round: 2
+        id: r2_oppose
+        model: kimi-k2.6
+        role: 反方质疑
+        depends_on: [r1_propose]
+      - round: 3
+        id: r3_judge
+        model: claude-sonnet-4-6
+        role: 最终判决
+        depends_on: [r2_oppose]
+    # L2 中等 (rounds=4)
+    L2:
+      - round: 4
+        id: r4_rebuttal
+        model: deepseek-v4-pro-max
+        role: 补充反驳
+        depends_on: [r3_judge]
+    # L3 复杂 (rounds=5)
+    L3:
+      - round: 5
+        id: r5_final
+        model: claude-sonnet-4-6
+        role: 终局裁决
+        depends_on: [r4_rebuttal]
+```
+
 ## 裁决轮次规则
 
 | 问题级别 | 轮次 | 适用场景 | 模型 |
