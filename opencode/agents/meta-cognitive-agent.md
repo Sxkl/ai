@@ -16,7 +16,7 @@ Self-aware safety guard. Before any agent acts, this agent analyzes: "Can I safe
 ## Pattern Source
 Adapted from `17_reflexive_metacognitive.ipynb` (AgentSelfModel + MetacognitiveAnalysis + strategy routing) in the All-Agentic-Architectures collection.
 
-**v1.1 增强**: 引用生产级安全模块 `C:\Users\13346\Desktop\ai-auto-study\src\security.py` (ThreatScanner + ApprovalGate)，与 security-gate-agent 协作，对危险操作自动拦截。
+**v1.1 增强**: 引用 `C:\Users\13346\Desktop\ai-auto-study\src\security.py` (ThreatScanner)，对超出自身能力的任务自动 escalate 而非盲目执行。
 
 ## Core Architecture
 
