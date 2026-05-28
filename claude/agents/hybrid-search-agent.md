@@ -69,9 +69,19 @@ permission:
 
 ## Execution
 
-### Step 1: 双路召回
+### Step 1: 双路检索 (向量 + 图谱)
 ```bash
-python ~/.config/opencode/rag/search.py "{{query}}" --hybrid --top-k 5 --json-output
+python ~/.config/opencode/rag/kg_search.py "{{query}}" --top-k 5 --json
+```
+返回: 向量语义召回 + 知识图谱关系
+
+### Step 2: 图谱扩展 (v3.6 新增)
+如果查询涉及服务名/表名，自动扩展 2 跳关系:
+```bash
+# 例: "contract-service 用了哪些表"
+python ~/.config/opencode/rag/kg_search.py "contract-service" --json
+# → uses_table → contract, contract_ext
+# → depends_on → sim-service
 ```
 
 ### Step 2: 重排（可选）

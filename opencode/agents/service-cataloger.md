@@ -9,7 +9,9 @@ permission:
   bash: allow
 ---
 
-# Service Cataloger Agent — v1
+# Service Cataloger Agent — v1.1 (图谱增强)
+
+> **v1.1**: 生成的知识文档自动入图 (nodes + edges)，支持图查询服务依赖关系
 
 ## 职责
 

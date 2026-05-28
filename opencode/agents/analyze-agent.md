@@ -84,14 +84,19 @@ Step 0a: Pattern Match
    └─ 未命中 → 走完整分析流程
 ```
 
-### Memory Layer 2: Similarity Search (Episodic — 历史案例)
+### Memory Layer 2: Similarity Search + 知识图谱 (v3.6)
 
-模式未命中时，搜索历史相似案例：
+模式未命中时，双路检索：
 
 ```
-Step 0b: Similarity Search
-   ├─ 搜索 knowledge/services/{service}-knowledge.md
-   │  └─ 读取服务已知陷阱 (如 contract-service 的 @Transactional+@DS 冲突)
+Step 0b: 双路检索
+   ├─ 路1: 向量语义搜索 (Supabase pgvector)
+   │    └─ python ~/.config/opencode/rag/search.py "{error_keywords}" --top-k 5
+   ├─ 路2: 知识图谱遍历 (Supabase nodes/edges)
+   │    └─ python ~/.config/opencode/rag/kg_search.py "{service_name}" --json
+   │       ├─ {service} ──uses_table──▶ [表列表]
+   │       ├─ {service} ──depends_on──▶ [依赖服务]
+   │       └─ Error ──fixed_by──▶ [修复模式]
    ├─ 搜索 knowledge/patterns/ 下所有 SOP-*.md
    │  └─ 匹配触发条件 (如 SOP-001: @Transactional+@DS 多数据源)
    ├─ 搜索 knowledge/L1-simple/ L2-medium/ L3-complex/ 下所有 K*.md
