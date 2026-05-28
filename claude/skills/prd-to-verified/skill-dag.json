@@ -1,0 +1,78 @@
+{
+  "$schema": "https://opencode.ai/skill-dag.schema.json",
+  "skill": "prd-to-verified",
+  "version": "1.0.0",
+  "description": "PRD → 验证通过 标准开发 DAG。13 层 25 步，支持并行执行、进度追踪、质量门禁、反馈循环。",
+  
+  "input_schema": {
+    "type": "object",
+    "required": ["requirement"],
+    "properties": {
+      "requirement": { "type": "string", "description": "需求描述或 Jira PR 编号" },
+      "jira_key": { "type": "string", "description": "Jira PR 编号 (如 PR-6312)" },
+      "service": { "type": "string", "description": "目标服务名 (可选，自动发现)" },
+      "frontend_project": { "type": "string", "default": "cube-new", "description": "前端项目路径" },
+      "mode": { "type": "string", "enum": ["full", "backend_only", "frontend_only"], "default": "full" }
+    }
+  },
+
+  "governance": {
+    "timeout_seconds": 3600,
+    "max_concurrent_steps": 4,
+    "quality_threshold": 7,
+    "max_revision_rounds": 3
+  },
+
+  "steps": [
+    { "id": "ai_chat",     "name": "① AI Chat 需求采集",      "type": "llm", "agent": "ai-chat",     "layer": 0, "depends_on": [] },
+    { "id": "brewer",      "name": "② Brewer PRD 生成",       "type": "llm", "agent": "brewer",      "layer": 1, "depends_on": ["ai_chat"] },
+    
+    { "id": "distiller",   "name": "③ Distiller 需求提取",    "type": "llm", "agent": "distiller",   "layer": 2, "depends_on": ["brewer"] },
+    { "id": "arch_analyze","name": "③ Architecture 架构分析", "type": "llm", "agent": "architecture-analyzer", "layer": 2, "depends_on": ["brewer"] },
+    { "id": "kb_scan",     "name": "③ Knowledge Base 扫描",   "type": "llm", "agent": "analyze-agent","layer": 2, "depends_on": ["brewer"] },
+    
+    { "id": "fe_trace",    "name": "④ Frontend 调用链追踪",   "type": "llm", "agent": "frontend-tracer","layer": 3, "depends_on": ["distiller"], "when": "input.mode != 'backend_only'" },
+    { "id": "be_search",   "name": "④ Backend 接口搜索",      "type": "llm", "agent": "requirement-analyzer", "layer": 3, "depends_on": ["distiller", "arch_analyze"] },
+    
+    { "id": "code_design", "name": "⑤ Code Designer 方案设计", "type": "llm", "agent": "code-designer","layer": 4, "depends_on": ["fe_trace", "be_search", "kb_scan"] },
+    
+    { "id": "design_review","name": "⑥ Design Review 方案评审", "type": "gate", "agent": "review-agent", "layer": 5, "depends_on": ["code_design"], "gate_threshold": 7, "max_retry": 2, "on_fail": "return_to_design" },
+    
+    { "id": "taster",      "name": "⑦ Taster 测试计划",       "type": "llm", "agent": "taster",      "layer": 6, "depends_on": ["design_review"] },
+    
+    { "id": "data_layer",  "name": "⑧ Data Layer 数据层",     "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"] },
+    { "id": "api_layer",   "name": "⑧ API Layer 接口层",      "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"] },
+    { "id": "biz_layer",   "name": "⑧ Biz Layer 业务层",      "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"] },
+    { "id": "fe_code",     "name": "⑧ Frontend 前端代码",     "type": "code", "agent": "gitlab-dev", "layer": 7, "depends_on": ["taster"], "when": "input.mode != 'backend_only'" },
+    
+    { "id": "lint",        "name": "⑨ Lint 检查",            "type": "tool", "agent": "auto-eval",  "layer": 8, "depends_on": ["data_layer", "api_layer", "biz_layer", "fe_code"] },
+    { "id": "typecheck",   "name": "⑨ TypeCheck 类型检查",   "type": "tool", "agent": "auto-eval",  "layer": 8, "depends_on": ["data_layer", "api_layer", "biz_layer", "fe_code"] },
+    { "id": "unit_test",   "name": "⑨ Unit Test 单元测试",   "type": "tool", "agent": "test-agent", "layer": 8, "depends_on": ["data_layer", "api_layer", "biz_layer", "fe_code"] },
+    
+    { "id": "crossfire_r1","name": "⑩ R1 PRD 合规审查",      "type": "llm", "agent": "crossfire",   "layer": 9, "depends_on": ["lint", "typecheck", "unit_test"] },
+    { "id": "crossfire_r2","name": "⑩ R2 架构安全审查",      "type": "llm", "agent": "crossfire",   "layer": 9, "depends_on": ["lint", "typecheck", "unit_test"] },
+    { "id": "crossfire_r3","name": "⑩ R3 生产就绪审查",      "type": "llm", "agent": "crossfire",   "layer": 9, "depends_on": ["lint", "typecheck", "unit_test"] },
+    
+    { "id": "quality_gate","name": "⑪ Quality Gate 质量关",   "type": "gate", "agent": "prd-to-verified-coordinator", "layer": 10, "depends_on": ["crossfire_r1", "crossfire_r2", "crossfire_r3"], "gate_threshold": 7, "max_retry": 3, "on_fail": "return_to_impl" },
+    
+    { "id": "git_mr",      "name": "⑫ Git Commit + MR 创建",  "type": "tool", "agent": "deploy-agent","layer": 11, "depends_on": ["quality_gate"] },
+    
+    { "id": "jira_update", "name": "⑫ Jira 回填",            "type": "tool", "agent": "jira-agent", "layer": 11, "depends_on": ["git_mr"] },
+    
+    { "id": "nebula",      "name": "⑬ Nebula 知识沉淀",      "type": "llm", "agent": "nebula",      "layer": 12, "depends_on": ["jira_update"] },
+    
+    { "id": "verify",      "name": "⑬ Final Verify 最终验证", "type": "gate", "agent": "prd-to-verified-coordinator", "layer": 12, "depends_on": ["nebula"] }
+  ],
+
+  "progress_tracking": {
+    "enabled": true,
+    "format": "layer_progress",
+    "report_interval": "per_step",
+    "display": {
+      "show_progress_bar": true,
+      "show_step_status": true,
+      "show_duration": true,
+      "show_agent_output_summary": true
+    }
+  }
+}
