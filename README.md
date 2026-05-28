@@ -58,20 +58,13 @@ User → Coordinator (DAG Scheduler)
 | `sls-log-analysis` | 全级别日志梳理分析 | v1 |
 | `production-incident-fix` | 生产故障排查修复 | v2 |
 
-## 技术栈
-
-- **框架**: OpenCode (Claude Sonnet / GPT / DeepSeek / Kimi 多模型)
-- **知识库**: Markdown + YAML frontmatter + 相似度搜索
-- **工具集成**: SLS (阿里云日志), Jira, GitLab, DMS (数据库)
-- **质量保证**: 3 轮代码审查 + 5 轮模型辩论 + 质量门禁
-
 ## 快速开始
 
 1. 安装 OpenCode CLI
 2. 将本仓库克隆到 `~/.config/opencode/`
 3. 配置 `.env` 中的 API keys
 4. 配置 `known-services.yaml` 中的服务列表
-5. 运行: `opencode` → 输入故障服务名 + P4 编号
+5. **重启 OpenCode** 以加载新配置
 
 ## 相关资源
 

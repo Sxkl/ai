@@ -1,3 +1,8 @@
+---
+name: auto-ship
+description: 自动交付 Pipeline — auto-eval 通过后自动创建 MR → 监控 CI → 合并/退回。Use ONLY when auto-eval passes (score ≥ 80) and code is ready for delivery.
+---
+
 # Auto-Ship — 自动交付 Pipeline
 
 ## 职责

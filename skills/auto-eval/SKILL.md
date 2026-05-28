@@ -1,3 +1,8 @@
+---
+name: auto-eval
+description: 自动评估门禁 — 代码生成后自动运行 lint/typecheck/test/coverage/security 质量门禁。评分 ≥ 80 触发 auto-ship，< 80 退回修复。Use when code is generated and needs quality evaluation.
+---
+
 # Auto-Eval Gate — 自动评估门禁
 
 ## 职责
