@@ -1,27 +1,31 @@
 # OpenCode Multi-Agent System
 
-[![Agents](https://img.shields.io/badge/Agents-41-blue)](./opencode/agents/)
+[![Agents](https://img.shields.io/badge/Agents-44-blue)](./opencode/agents/)
 [![Skills](https://img.shields.io/badge/Skills-32-green)](./opencode/skills/)
 [![Patterns](https://img.shields.io/badge/Patterns-20/21-orange)](./agentic-architectures-analysis.md)
 [![Status](https://img.shields.io/badge/Status-Production-brightgreen)]()
 
-基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**41 个 Agent + 32 个 Skill + 4 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **20/21 种**。
+基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**44 个 Agent + 32 个 Skill + 5 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **20/21 种**。
 
-**v3.4 智能增强版**：RAG 混合搜索 + 定时调度 + 多路径探索 + Prompt Caching 成本优化。
+**v3.7 代码审查增强版**：三轮对抗式审查 DAG + CI 编译门禁 + 链式 API 盲区预防。
 
 ---
 
-## 三流水线架构
+## 四流水线架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     OpenCode Agent System                     │
-│                       39 Agents · 19/21 模式                  │
+│                       44 Agents · 20/21 模式                  │
 ├─────────────────┬─────────────────┬─────────────────────────┤
 │  修复流水线       │  开发流水线       │  Continuous Loop        │
 │  (coordinator)   │  (dev-harness)   │  (continuous-loop)      │
 │  生产故障排查      │  全栈 Harness DAG │  8 阶段闭环开发          │
 │  → Bug Fix       │  → Feature Dev   │  → PRD → Verify ↻       │
+├─────────────────┼─────────────────┼─────────────────────────┤
+│  审查流水线 (v3.7 新增)                                  │
+│  (code-review-dag)                                       │
+│  R1 审查 → R2 挑战 → R3 裁定 + CI 编译门禁                  │
 ├─────────────────┼─────────────────┼─────────────────────────┤
 │  Hermes 增强层                                          │
 │  ├─ security-gate      安全审批门                         │
@@ -37,8 +41,8 @@
 
 ```
 ├── opencode/                          ← ~/.config/opencode/
-│   ├── agents/      39 agents (v3.3)
-│   ├── skills/      32 skills · 4 DAG
+│   ├── agents/      44 agents (v3.7)
+│   ├── skills/      32 skills · 5 DAG
 │   ├── knowledge/   19 模式 + 3 SOP + 2 服务文档
 │   ├── rag/         ChromaDB 向量检索
 │   └── opencode.json
@@ -55,7 +59,7 @@
 
 ---
 
-## Agent 清单 (39)
+## Agent 清单 (44)
 
 ### 修复流水线 (16)
 
@@ -103,6 +107,16 @@
 | ⑥ **crossfire** | 3 轮交叉验证 |
 | ⑦ **destroyer** | 缺陷根因分析 |
 | ⑧ **nebula** | 知识沉淀 (↻ 反哺) |
+
+### 审查流水线 (5, v3.7 新增)
+
+| Agent | 版本 | 说明 |
+|-------|:--:|------|
+| **code-review-dag** | **v2.0** | 三轮对抗式审查 DAG 调度器 + CI 编译门禁 |
+| **r1-reviewer** | **v2.0** | 逐行审查 + 链式 API 盲区检测 |
+| **r2-challenger** | v1.0 | 逐条质疑 R1 + 补充遗漏 |
+| **r3-arbiter** | v1.0 | 综合裁定 + 评分 + 合并建议 (Kimi K2.6) |
+| **report-saver** | v1.0 | 审查/测试报告 Markdown 生成 |
 
 ### 基础能力层 (7, +2 新)
 
@@ -161,7 +175,8 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 
 | 版本 | 日期 | 变更 |
 |:--:|------|------|
-| **v3.6** | **2026-05-28** | **知识图谱(62节点112边) + 对话向量记忆 + 21服务文档扫描** |
+| **v3.7** | **2026-05-29** | **代码审查 DAG: 三轮对抗式审查 + CI 编译门禁 + 链式 API 盲区预防** |
+| v3.6 | 2026-05-28 | 知识图谱(62节点112边) + 对话向量记忆 + 21服务文档扫描 |
 | v3.5 | 2026-05-28 | RAG 云端 Supabase + 7 新 Agent + Pipeline DAG + Prompt Caching |
 | v3.4 | 2026-05-28 | RAG 混合搜索 + Cron 定时 + Tree of Thoughts + Prompt Caching |
 | v3.3 | 2026-05-28 | Hermes 增强: 压缩/委托/模拟 + 3 新 Agent + 6 升级 |
