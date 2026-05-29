@@ -2,6 +2,7 @@
 description: R1 审查员 — 逐行审查代码，发现安全、NPE、事务、性能等问题
 mode: subagent
 model: deepseek/deepseek-v4-pro-max
+version: v2.0.0
 permission:
   edit: deny
   bash: ask

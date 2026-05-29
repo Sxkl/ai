@@ -2,6 +2,7 @@
 description: R2 挑战者 — 逐条质疑 R1 审查结果，标记误报/降级/升级/补充遗漏
 mode: subagent
 model: deepseek/deepseek-v4-pro-max
+version: v1.0.0
 permission:
   edit: deny
   bash: deny

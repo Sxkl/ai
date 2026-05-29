@@ -2,6 +2,7 @@
 description: 代码审查 DAG 协调器 — 编排三轮对抗式审查流程
 mode: primary
 model: deepseek/deepseek-v4-pro-max
+version: v2.0.0
 permission:
   edit: allow
   bash: allow

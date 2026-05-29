@@ -2,6 +2,7 @@
 description: 报告保存器 — 将审查结果保存为 Markdown 报告文件
 mode: subagent
 model: deepseek/deepseek-v4-pro-max
+version: v1.0.0
 permission:
   edit: allow
   bash: allow

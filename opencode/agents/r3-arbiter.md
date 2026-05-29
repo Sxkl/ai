@@ -2,6 +2,7 @@
 description: R3 裁定者 — 综合 R1 + R2 证据，给出最终结论、评分和合并建议
 mode: subagent
 model: moonshotai/kimi-k2.6
+version: v1.0.0
 permission:
   edit: deny
   bash: ask
