@@ -53,6 +53,7 @@ rsync -av ~/.claude/knowledge/ ~/.config/opencode/knowledge/
 | `io-agent` | `@~/.claude/agents/io-agent.md` | Git 仓库操作 |
 | `cost-tracker` | `@~/.claude/agents/cost-tracker.md` | 成本追踪 |
 | `workflow-driver` | `@~/.claude/agents/workflow-driver.md` | AI-Native TDD 循环 |
+| `code-wiki-agent` | `@~/.claude/agents/code-wiki-agent.md` | 代码知识库（扫描/问答/架构图/影响分析） |
 
 ## 生产故障修复 Pipeline (DAG)
 
