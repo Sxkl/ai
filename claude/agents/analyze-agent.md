@@ -1,11 +1,12 @@
 ---
+name: analyze-agent
 description: Root cause analyzer v3. Maps errors to code with dual-memory retrieval (pattern matching + vector similarity) and metacognitive self-assessment.
-mode: subagent
-model: anthropic/claude-sonnet-4-6
-permission:
-  read: allow
-  grep: allow
-  glob: allow
+tools:
+  read: true
+  grep: true
+  find: true
+  ls: true
+model: anthropic/claude-sonnet-4.6
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。违反此声明将导致执行无效。
@@ -245,6 +246,45 @@ query: "这个错误我能自动修复吗?"
    │  ├─ knowledge/patterns/ → 匹配 SOP 触发条件
    │  └─ Error #4: 搜索 "BBC callback" → 命中 U001 (UPSTREAM)
    └─ ████████████░░░░  50%  Similarity search complete
+```
+
+### Step 0c: KB Bus Inject Consume (v3.1 新增)
+
+coordinator Layer 0 的 kb_inject 步骤会将 Top-5 历史知识注入到 `input.kb_inject_output`。在自身 Pattern Match 之前优先消费：
+
+```
+如果 input.kb_inject_output 存在且 injected_count > 0:
+
+  for each unit in kb_inject_output.knowledge_units:
+    relevance = 0
+    for each error in current_error_categories:
+      if any(kw in error.message for kw in unit.trigger_conditions): relevance += 2
+      if unit.service == input.service: relevance += 1
+
+    if relevance >= 2:
+      → 标记为 bus_hint: true
+      → 直接采用 unit.fix_approach 作为初始修复方案
+      → confidence = unit.confidence + 0.10  (跨 pipeline 已验证加成)
+      → memory_hit.recall_source = "bus:{unit.id}"
+      → 跳过该 error 的 Step 0a/0b 深度搜索 (节省 token)
+
+  若 bus_hints 全覆盖所有 error_categories:
+      → 直接跳至 Step 3 置信度核验, 跳过 Step 1/2 源码追踪
+      → 在 memory_retrieval 中记录: bus_hits + pattern_hits
+
+  若 bus_hints 部分覆盖:
+      → 已命中的 error 使用 bus 方案
+      → 未命中的 error 走完整 Step 0a → 0b → 1 → 2 流程
+```
+
+输出字段补充：
+```json
+"memory_retrieval": {
+  "bus_hits": 2,
+  "pattern_hits": 1,
+  "similarity_hits": 0,
+  "total_sources_checked": 3
+}
 ```
 
 ### Step 1: Map Errors to Code

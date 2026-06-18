@@ -1,10 +1,13 @@
 ---
+name: cron-scheduler-agent
 description: Cron scheduler agent v1. Schedule recurring AI tasks — daily SLS scan, weekly knowledge refresh, monthly report generation. Cron expressions or natural language scheduling.
-mode: subagent
-model: anthropic/claude-sonnet-4-6
-permission:
-  read: allow
-  bash: allow
+tools:
+  read: true
+  bash: true
+  grep: true
+  find: true
+  ls: true
+model: anthropic/claude-sonnet-4.6
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。
@@ -87,6 +90,44 @@ permission:
 调度: 0 8 * * 1-5 (工作日早上8点)
 代理: requirement-analyzer
 提示词: 检查所有进行中的 PRD 是否有新的 Jira 更新，更新状态到看板
+```
+
+### 5. 每日知识总线健康检查
+```
+任务: daily-kb-health
+调度: 0 23 * * * (每天晚上11点, 日终)
+代理: knowledge-bus-agent
+提示词: |
+  mode=health_check
+  检查所有 bus index.json:
+  1. occurrence_count >= 2 且未 promote 的条目 → 列出 (距离升级还差N次)
+  2. occurrence_count >= 3 且未 promote → 立即触发 SYNC
+  3. promoted 条目总数 vs index.md K-series 条目数 是否一致
+  输出: bus_health_report.md 到 ~/.claude/knowledge/bus/
+deliver_to: file
+timeout_seconds: 120
+retry_on_failure: false
+```
+
+### 6. 每周 Pipeline 横向对比报告
+```
+任务: weekly-pipeline-summary
+调度: 0 9 * * 1 (每周一上午9点)
+代理: report-saver
+提示词: |
+  生成本周 Pipeline 执行横向对比报告:
+  来源: ~/.config/opencode/cost-log.jsonl + docs/execution-summary/
+  统计维度:
+    - 每条 Pipeline 执行次数 + 平均耗时 + 平均成本
+    - 模型层级分布趋势 (haiku/sonnet/opus 占比变化)
+    - 知识总线命中率 (bus_hits / total_errors)
+    - 质量关卡通过率 + 平均 revision 轮次
+    - K-series 本周新增条目
+  输出: docs/weekly-summary/YYYYMMDD_weekly_pipeline.md
+deliver_to: file
+timeout_seconds: 300
+retry_on_failure: true
+max_retries: 1
 ```
 
 ## Execution
