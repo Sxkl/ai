@@ -151,9 +151,71 @@ model: anthropic/claude-haiku-4-5-20251001
 **备注**:  
 ```
 
+## Execution Summary 模板
+
+每次 Pipeline 完成后额外生成，路径: `docs/execution-summary/YYYYMMDD_{pipeline}_{execution_id}.md`
+
+```markdown
+# Execution Summary — {pipeline} — {execution_id}
+
+**执行时间**: YYYY-MM-DD HH:MM  **服务**: {service}  **总耗时**: {total_s}s  **总成本**: ${total_usd}
+
+---
+
+## 耗时 & 成本分布
+
+| Step | 模型层级 | 耗时(s) | Token In | Token Out | 成本($) |
+|------|---------|---------|----------|-----------|--------|
+| kb_inject | haiku | 1.2 | 800 | 200 | 0.001 |
+| sls | sonnet | 8.4 | 3200 | 1800 | 0.018 |
+| analyze | sonnet | 12.1 | 5000 | 2400 | 0.031 |
+| fix | sonnet | 18.3 | 6200 | 3100 | 0.042 |
+| r3 | opus | 9.7 | 4800 | 1200 | 0.089 |
+| ... | ... | ... | ... | ... | ... |
+| **合计** | — | **{total}** | **{in}** | **{out}** | **{usd}** |
+
+---
+
+## 模型层级分布
+
+| 层级 | 调用次数 | Token 占比 | 成本占比 |
+|------|---------|-----------|---------|
+| haiku | N | XX% | XX% |
+| sonnet | N | XX% | XX% |
+| opus | N | XX% | XX% |
+
+---
+
+## 知识注入效果
+
+| 注入条数 | 命中K-series | 来自bus知识 | 最相关条目 | 是否促成命中 |
+|---------|------------|-----------|---------|------------|
+| 3 | 1 | 2 | K013: Redis lock | ✅ analyze提前发现 |
+
+---
+
+## 质量关卡历史
+
+| Round | 评分 | 结果 | 主要问题 |
+|-------|------|------|---------|
+| 1 | 6/10 | ❌ 未通过 | R2发现NPE未修复 |
+| 2 | 8/10 | ✅ 通过 | — |
+
+---
+
+## 知识总线 EMIT
+
+| 沉淀条目 | occurrence_count | 是否升级K-series |
+|---------|-----------------|----------------|
+| Redis sequence INCR | 2 | ❌ (需再1次) |
+```
+
+---
+
 ## 行为约束
 
 - 文件名必须包含日期和分支/功能名
 - 目录必须存在，如不存在则自动创建
 - 报告内容必须脱敏（不暴露真实 IMSI/ICCID）
 - 每次审查生成两个文件：审查报告 + 测试报告（如有测试）
+- Pipeline 完成后额外生成 Execution Summary（从 cost-log.jsonl + state JSON 读取数据）

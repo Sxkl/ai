@@ -151,6 +151,37 @@ step_type = gate:
 最大压缩次数: 3次/execution (防止频繁压缩导致信息丢失)
 ```
 
+### 2.1b 动态模型路由
+
+```
+每个 llm_call step 执行前，计算 complexity_score 并自动选择模型层级:
+
+complexity_score = 0
+
+输入规模:
+  if input_tokens > 2000:  complexity_score += 3
+  elif input_tokens > 500: complexity_score += 1
+
+内容风险:
+  if "P0" in step_context OR "security" in step_context: complexity_score += 3
+  if "lock" in step_context OR "thread_safe" in step_context: complexity_score += 2
+  if "business_logic" in step_context OR "data_flow" in step_context: complexity_score += 2
+
+步骤角色:
+  if step.role in ["final_arbitration", "r5_final", "quality_gate"]: complexity_score += 2
+  if step.role in ["classify", "format", "save_report", "cost_track"]: complexity_score -= 2
+
+路由结果:
+  complexity_score <= 1  → anthropic/claude-haiku-4-5-20251001   (分类/格式化/记录)
+  complexity_score 2-4   → anthropic/claude-sonnet-4.6            (分析/推理/审查)
+  complexity_score >= 5  → anthropic/claude-opus-4-8              (P0修复/L3裁决/终局判决)
+
+覆盖优先级:
+  step 明确指定 model → 本动态路由 → 默认 anthropic/claude-sonnet-4.6
+
+记录路由决策到 state.step_states.{step_id}.model_selected (用于 execution summary)
+```
+
 ### 2.2 引用解析器
 
 执行 step 前，递归解析 `${...}` 引用:

@@ -23,24 +23,24 @@ pipeline:
     L1:
       - round: 1
         id: r1_propose
-        model: claude-sonnet-4-6
+        model: anthropic/claude-sonnet-4.6
         role: 正方提案
         depends_on: []
       - round: 2
         id: r2_oppose
-        model: kimi-k2.6
+        model: moonshotai/kimi-k2
         role: 反方质疑
         depends_on: [r1_propose]
       - round: 3
         id: r3_judge
-        model: claude-sonnet-4-6
+        model: anthropic/claude-sonnet-4.6
         role: 最终判决
         depends_on: [r2_oppose]
     # L2 中等 (rounds=4)
     L2:
       - round: 4
         id: r4_rebuttal
-        model: deepseek-v4-pro-max
+        model: deepseek/deepseek-v4-pro-max
         role: 补充反驳
         depends_on: [r3_judge]
     # L3 复杂 (rounds=5)
@@ -93,7 +93,7 @@ elif fix_type in [FIX-002 parallelStream, "lock_fix", "thread_safety", "business
 | 辩论R2(反方) | `moonshotai/kimi-k2.6` | `deepseek/deepseek-v4-pro-max` | kimi+deepseek联合找反论点 |
 | 辩论R3(反驳) | `anthropic/claude-sonnet-4.6` | `openai/gpt-5.3-codex` | claude驳斥+codex技术验证 |
 | 辩论R4(最终) | `deepseek/deepseek-v4-pro-max` | `moonshotai/kimi-k2.6` | deepseek深度评估, kimi补充 |
-| 辩论R5(判决) | `anthropic/claude-sonnet-4.6` | — | 保守安全的最终判决 |
+| 辩论R5(判决) | `anthropic/claude-opus-4-8` | — | L3 复杂终局裁决，最高质量 |
 
 ## 可用模型
 
