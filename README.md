@@ -1,13 +1,13 @@
 # OpenCode Multi-Agent System
 
-[![Agents](https://img.shields.io/badge/Agents-44-blue)](./opencode/agents/)
+[![Agents](https://img.shields.io/badge/Agents-49-blue)](./opencode/agents/)
 [![Skills](https://img.shields.io/badge/Skills-32-green)](./opencode/skills/)
 [![Patterns](https://img.shields.io/badge/Patterns-21/21-brightgreen)](./agentic-architectures-analysis.md)
 [![Status](https://img.shields.io/badge/Status-Production-brightgreen)]()
 
-基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**45 个 Agent + 32 个 Skill + 5 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **21/21 种**。
+基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**49 个 Agent + 32 个 Skill + 5 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **21/21 种**。
 
-**v3.8 全架构覆盖版**：Cellular Automata 依赖传播扫描，完成 21/21 架构模式全覆盖。
+**v3.9 领域专家版**：api-perf/billing/data-migration/ops 四大领域 Agent 全面升级，语义路由 + CA传播 + Checkpoint断点续跑 + Sphere2对账。
 
 ---
 
@@ -16,7 +16,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     OpenCode Agent System                     │
-│                       45 Agents · 21/21 模式                  │
+│                       49 Agents · 21/21 模式                  │
 ├─────────────────┬─────────────────┬─────────────────────────┤
 │  修复流水线       │  开发流水线       │  Continuous Loop        │
 │  (coordinator)   │  (dev-harness)   │  (continuous-loop)      │
@@ -41,7 +41,7 @@
 
 ```
 ├── opencode/                          ← ~/.config/opencode/
-│   ├── agents/      45 agents (v3.8)
+│   ├── agents/      49 agents (v3.9)
 │   ├── skills/      32 skills · 5 DAG
 │   ├── knowledge/   19 模式 + 3 SOP + 2 服务文档
 │   ├── rag/         ChromaDB 向量检索
@@ -118,7 +118,7 @@
 | **r3-arbiter** | v1.0 | 综合裁定 + 评分 + 合并建议 (Kimi K2.6) |
 | **report-saver** | v1.0 | 审查/测试报告 Markdown 生成 |
 
-### 基础能力层 (8, +1 新)
+### 基础能力层 (8)
 
 | Agent | 版本 | 说明 |
 |-------|:--:|------|
@@ -129,7 +129,16 @@
 | delegation-agent | v1 | 并行子代理委托 |
 | context-compressor-agent | v1 | Token 预算管理 |
 | prd-to-verified-coordinator | v1 | 13 层 PRD→Verified DAG |
-| **cellular-automata-agent** | **v1 new** | 依赖传播扫描 (21/21 ✅) |
+| cellular-automata-agent | v1 | 依赖传播扫描 (21/21 ✅) |
+
+### 领域专家 Agent (4, v3.9 升级)
+
+| Agent | 版本 | 说明 |
+|-------|:--:|------|
+| **api-perf-agent** | **v2** ↑ | API 超时诊断 + CA传播链追踪 + 自动修复 (confidence≥0.85) + SLO基线 |
+| **billing-agent** | **v2** ↑ | 出账/计费 + Sphere2外部对账 + Delegation并行多客户 + 欺诈检测 |
+| **data-migration-agent** | **v3** ↑ | V3→V4迁移 + Checkpoint断点续跑 + Dry-run推演 + 实时进度 |
+| **ops-agent** | **v2** ↑ | 运营域 + 语义路由 + Runbook记忆 + JumpServer集成 |
 
 ---
 
@@ -174,7 +183,8 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 
 | 版本 | 日期 | 变更 |
 |:--:|------|------|
-| **v3.8** | **2026-06-18** | **Cellular Automata 依赖传播扫描 — 21/21 架构模式全覆盖** |
+| **v3.9** | **2026-06-18** | **领域专家升级: api-perf v2 + billing v2 + data-migration v3 + ops v2 — 49 Agents** |
+| v3.8 | 2026-06-18 | Cellular Automata 依赖传播扫描 — 21/21 架构模式全覆盖 |
 | v3.7 | 2026-05-29 | 代码审查 DAG: 三轮对抗式审查 + CI 编译门禁 + 链式 API 盲区预防 |
 | v3.6 | 2026-05-28 | 知识图谱(62节点112边) + 对话向量记忆 + 21服务文档扫描 |
 | v3.5 | 2026-05-28 | RAG 云端 Supabase + 7 新 Agent + Pipeline DAG + Prompt Caching |
@@ -191,4 +201,5 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 - [ai-auto-study](https://github.com/Sxkl/ai-auto-study) — 21 种 Agent 架构学习引擎 + 生产共享库
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — 生产级 AI Agent (171k stars)
 - [OpenCode](https://opencode.ai) — Agent/Skill 规范
+
 
