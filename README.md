@@ -2,12 +2,12 @@
 
 [![Agents](https://img.shields.io/badge/Agents-44-blue)](./opencode/agents/)
 [![Skills](https://img.shields.io/badge/Skills-32-green)](./opencode/skills/)
-[![Patterns](https://img.shields.io/badge/Patterns-20/21-orange)](./agentic-architectures-analysis.md)
+[![Patterns](https://img.shields.io/badge/Patterns-21/21-brightgreen)](./agentic-architectures-analysis.md)
 [![Status](https://img.shields.io/badge/Status-Production-brightgreen)]()
 
-基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**44 个 Agent + 32 个 Skill + 5 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **20/21 种**。
+基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**45 个 Agent + 32 个 Skill + 5 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **21/21 种**。
 
-**v3.7 代码审查增强版**：三轮对抗式审查 DAG + CI 编译门禁 + 链式 API 盲区预防。
+**v3.8 全架构覆盖版**：Cellular Automata 依赖传播扫描，完成 21/21 架构模式全覆盖。
 
 ---
 
@@ -16,7 +16,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     OpenCode Agent System                     │
-│                       44 Agents · 20/21 模式                  │
+│                       45 Agents · 21/21 模式                  │
 ├─────────────────┬─────────────────┬─────────────────────────┤
 │  修复流水线       │  开发流水线       │  Continuous Loop        │
 │  (coordinator)   │  (dev-harness)   │  (continuous-loop)      │
@@ -41,7 +41,7 @@
 
 ```
 ├── opencode/                          ← ~/.config/opencode/
-│   ├── agents/      44 agents (v3.7)
+│   ├── agents/      45 agents (v3.8)
 │   ├── skills/      32 skills · 5 DAG
 │   ├── knowledge/   19 模式 + 3 SOP + 2 服务文档
 │   ├── rag/         ChromaDB 向量检索
@@ -118,7 +118,7 @@
 | **r3-arbiter** | v1.0 | 综合裁定 + 评分 + 合并建议 (Kimi K2.6) |
 | **report-saver** | v1.0 | 审查/测试报告 Markdown 生成 |
 
-### 基础能力层 (7, +2 新)
+### 基础能力层 (8, +1 新)
 
 | Agent | 版本 | 说明 |
 |-------|:--:|------|
@@ -126,28 +126,27 @@
 | meta-cognitive-agent | **v1.1** ↑ | 元认知安全 (引用 security.py) |
 | self-improve-agent | **v1.1** ↑ | Self-Improvement (引用 skills.py) |
 | service-cataloger | v1 | 服务知识图谱 |
-| **delegation-agent** | **v1 new** | 并行子代理委托 |
-| **context-compressor-agent** | **v1 new** | Token 预算管理 |
+| delegation-agent | v1 | 并行子代理委托 |
+| context-compressor-agent | v1 | Token 预算管理 |
 | prd-to-verified-coordinator | v1 | 13 层 PRD→Verified DAG |
+| **cellular-automata-agent** | **v1 new** | 依赖传播扫描 (21/21 ✅) |
 
 ---
 
-## 架构模式覆盖：19/21
+## 架构模式覆盖：21/21 ✅
 
-| 已覆盖 (19) | Hermes 增强 | 待补充 (2) |
-|------------|------------|-----------|
-| Reflection, Tool Use, ReAct | ✅ 已实现 | Tree of Thoughts |
-| Planning, Multi-Agent, PEV | ✅ 已实现 | Cellular Automata |
-| Blackboard, Episodic+Semantic | ✅ 已实现 | |
-| **Context Compression** | **v3.3 新增** | |
-| Mental Loop, Meta-Controller | ✅ 已实现 | |
-| Graph Memory, Ensemble | ✅ 已实现 | |
-| **Dry-Run** | **v3.3 新增** | |
-| RLHF/Self-Improvement | ✅ 已实现 | |
-| Metacognitive | ✅ 已实现 | |
-| **Plugin System** | **v3.3 新增** | |
-| **Delegation** | **v3.3 新增** | |
-| **Security Gate** | **v3.3 新增** | |
+| 已覆盖 (21) | 实现版本 |
+|------------|---------|
+| Reflection, Tool Use, ReAct | v1.0 |
+| Planning, Multi-Agent, PEV | v1.0 |
+| Blackboard, Episodic+Semantic | v2.0 |
+| Context Compression, Delegation | v3.3 |
+| Mental Loop, Meta-Controller, Ensemble | v3.0 |
+| Graph Memory, RLHF/Self-Improvement | v3.2 |
+| Dry-Run, Security Gate, Plugin System | v3.3 |
+| Metacognitive | v3.3 |
+| Tree of Thoughts | v3.4 |
+| **Cellular Automata** | **v3.8 🆕** |
 
 ---
 
@@ -175,7 +174,8 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 
 | 版本 | 日期 | 变更 |
 |:--:|------|------|
-| **v3.7** | **2026-05-29** | **代码审查 DAG: 三轮对抗式审查 + CI 编译门禁 + 链式 API 盲区预防** |
+| **v3.8** | **2026-06-18** | **Cellular Automata 依赖传播扫描 — 21/21 架构模式全覆盖** |
+| v3.7 | 2026-05-29 | 代码审查 DAG: 三轮对抗式审查 + CI 编译门禁 + 链式 API 盲区预防 |
 | v3.6 | 2026-05-28 | 知识图谱(62节点112边) + 对话向量记忆 + 21服务文档扫描 |
 | v3.5 | 2026-05-28 | RAG 云端 Supabase + 7 新 Agent + Pipeline DAG + Prompt Caching |
 | v3.4 | 2026-05-28 | RAG 混合搜索 + Cron 定时 + Tree of Thoughts + Prompt Caching |
@@ -191,3 +191,4 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 - [ai-auto-study](https://github.com/Sxkl/ai-auto-study) — 21 种 Agent 架构学习引擎 + 生产共享库
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — 生产级 AI Agent (171k stars)
 - [OpenCode](https://opencode.ai) — Agent/Skill 规范
+
