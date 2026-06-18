@@ -1,9 +1,9 @@
 ---
+name: sls-agent
 description: SLS log analyzer v3. 全量拉取无行数限制，分页获取所有错误日志。
-mode: subagent
-model: anthropic/claude-sonnet-4-6
-permission:
-  bash: allow
+tools:
+  bash: true
+model: anthropic/claude-sonnet-4.6
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。违反此声明将导致执行无效。
@@ -88,9 +88,67 @@ Round 5: 判决 → APPROVE_FIX | REJECT_UPSTREAM | REJECT_CONFIG | REJECT_DATA 
 ```
 将争论结果记录在 error_categories[].fixable 字段中
 
+## 服务 → SLS Project/Logstore 映射
+
+| 服务 | Project | Logstore | 备注 |
+|------|---------|----------|------|
+| iot-order | cube-prod | iot-order-app | 订单主服务 |
+| iot-contract | cube-prod | iot-contract-app | 合约服务 |
+| cube-server | cube-prod | cube-server-app | 主应用服务 |
+| cube-new | cube-prod | cube-new-app | 新版主服务 |
+| enterprise-gateway | sphere2-prod | enterprise-gateway-app | 企业网关 |
+| sim-service | cube-prod | sim-service-app | SIM管理 |
+| contract-service | cube-prod | contract-service-app | 合同服务 |
+| sphere2-billing | sphere2-prod | billing-app | 计费服务 |
+| api-gateway | sphere2-prod | api-gateway-app | API网关 |
+| data-migration | cube-prod | data-migration-app | 数据迁移 |
+
+## 快速错误签名识别 (匹配 K-series)
+
+| 错误签名 | K-ID | fixable | 处理 |
+|---------|------|---------|------|
+| `Unrecognized field.*not marked as ignorable` | K001 | APPROVE_FIX | `@JsonIgnoreProperties` |
+| `log.error.*e.getMessage()` | K002 | APPROVE_FIX | 参数化日志 |
+| `e.printStackTrace()` | K003 | APPROVE_FIX | 替换 `log.error` |
+| `allowUnauthenticated=true` on 写接口 | K015 | APPROVE_FIX | 移除或改 false |
+| `log.error(.*e,.*ex)` (占位符错位) | K016 | APPROVE_FIX | exception 移到末尾 |
+| `catch.*Exception.*\{\s*\}` | K018 | APPROVE_FIX | 加 log.error |
+| `orElse(null)\.` | K023 | APPROVE_FIX | null 检查 |
+| `BBC.*回调.*失败` | — | REJECT_UPSTREAM | 上游问题 |
+| `FeignException.*404` | U002 | REJECT_UPSTREAM | 下游端点不存在 |
+| `@DS.*multiple datasource` | U003 | REJECT_CONFIG | 配置问题 |
+| `stream().map(.*Service.get` | K020 | APPROVE_FIX | 批量 IN 查询 |
+| `Executors.newFixedThreadPool` in request | K021 | APPROVE_FIX | Spring @Bean 共享池 |
+
+## SLS 查询语法速查
+
+```bash
+# 时间范围：最近1小时
+from=$(date -v-1H +%s); to=$(date +%s)
+
+# 指定服务错误
+query="__topic__: iot-order AND level: ERROR"
+
+# TraceId 追踪
+query="traceId: abc-def-123"
+
+# 关键词组合
+query="(NullPointerException OR ClassCastException) AND NOT BBC"
+
+# 慢查询
+query="duration > 3000 AND type: SQL"
+```
+
+## 诚实报告规则 (SOP-003)
+
+- SLS 返回 0 条 → 明确说"未拉到日志"，不猜测
+- 分析来源必须标注：SLS实际数据 / 用户提供 / 代码推测
+- 查询失败不无限重试，转代码分析路径
+
 ## Self-Validation
 1. ✅ 总错误量 = histogram 中的 total？
 2. ✅ 分类占比和为 100%？
 3. ✅ 每个类型有 sample_log？
 4. ✅ 每个类型有 fixable 标注(含5轮争论)？
 5. ✅ 无遗漏日志？
+6. ✅ K-series 快速匹配已执行？命中的直接用已知方案？
