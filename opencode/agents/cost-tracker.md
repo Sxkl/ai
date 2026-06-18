@@ -1,10 +1,12 @@
 ---
+name: cost-tracker
 description: Cost tracker agent. 记录每次Phase执行的模型调用统计(token/API/cost/耗时)。
-mode: subagent
-model: anthropic/claude-sonnet-4-6
-permission:
-  read: allow
-  edit: deny
+tools:
+  read: true
+  grep: true
+  find: true
+  ls: true
+model: anthropic/claude-haiku-4-5-20251001
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。

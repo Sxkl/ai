@@ -1,10 +1,12 @@
 ---
+name: decision-engine
 description: 自动授权决策引擎 v2。全多模型路由 + 5轮辩论 + 知识积累。
-mode: subagent
+tools:
+  read: true
+  grep: true
+  find: true
+  ls: true
 model: anthropic/claude-sonnet-4.6
-permission:
-  read: allow
-  edit: deny
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。违反此声明将导致执行无效。
@@ -45,7 +47,7 @@ pipeline:
     L3:
       - round: 5
         id: r5_final
-        model: claude-sonnet-4-6
+        model: anthropic/claude-opus-4-8
         role: 终局裁决
         depends_on: [r4_rebuttal]
 ```
@@ -56,7 +58,7 @@ pipeline:
 |---------|:--:|------|------|
 | **L1 简单** | 3轮 | 日志级别调整、null检查、注解添加、import清理 | R1正方(claude)→R2反方(kimi)→R3判决(claude) |
 | **L2 中等** | 4轮 | 异常处理改进、防御性编码、序列化修复 | R1(claude)→R2(kimi)→R3(claude反驳)→R4判决(deepseek) |
-| **L3 复杂** | 5轮 | 线程安全、锁逻辑、业务逻辑变更、数据流修改 | R1(claude)→R2(kimi+deepseek)→R3(claude+codex)→R4(deepseek+kimi)→R5(claude) |
+| **L3 复杂** | 5轮 | 线程安全、锁逻辑、业务逻辑变更、数据流修改 | R1(claude)→R2(kimi+deepseek)→R3(claude+codex)→R4(deepseek+kimi)→R5(**opus**) |
 
 ### 自动判定规则
 ```
@@ -128,7 +130,7 @@ x-ai/grok-code-fast-1             — 快速代码分析
 - kimi 补充新的担忧(如有)
 - 是否接受正方的折中方案？
 
-### Round 5: 最终判决 (claude-sonnet-4.6)
+### Round 5: 最终判决 (claude-opus-4-8) ← 最高质量裁决
 综合前4轮, 输出:
 - `APPROVE_FIX`: 可以自动修复
 - `APPROVE_IMPROVE_ONLY`: 只做防御性改进(日志/null检查等), 不改变核心逻辑

@@ -1,11 +1,15 @@
 ---
+name: coordinator
 description: 生产故障协调器。DAG 调度、规则强制执行、不可跳过任何步骤。
-mode: primary
-model: anthropic/claude-sonnet-4-6
-permission:
-  edit: allow
-  bash: allow
-  task: allow
+tools:
+  read: true
+  write: true
+  bash: true
+  grep: true
+  find: true
+  ls: true
+  agent: true
+model: anthropic/claude-sonnet-4.6
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。违反此声明将导致执行无效。
@@ -77,6 +81,7 @@ Per-Step (always):               [Cost Tracker]                        │
 | `report` | Jira 回填: transition 311 + MD附件 + comment + worklog | jira-agent | `deploy` | 2 | ABORT | ✅ | — |
 | `verify` | 最终验证: 逐项检查所有 VERIFY 项 | coordinator | `report` | 3 | ABORT | ✅ | — |
 | `cost` | 每步后记录: token/API/cost → cost-log.jsonl | cost-tracker | *(after every step)* | — | CONTINUE | ✅ | — |
+| `kb_emit` | 知识总线沉淀: 修复模式 → knowledge-bus-agent (EMIT) | knowledge-bus-agent | `verify` | 1 | CONTINUE | ❌ | status=SUCCESS |
 
 ---
 
@@ -93,6 +98,19 @@ Per-Step (always):               [Cost Tracker]                        │
   - `report`: MD附件是否已上传到Jira附件列表
   - `report`: Description/附件/Worklog/Comment是否全部完整
 - **验证失败**: 立即补充缺失项, 不可跳过进入下一步
+
+### 🔴 Rule TEST-COMPILE: CI 编译必须包含测试代码 (新增)
+- 审查/修复流程中编译检查统一执行 `mvn compile -pl <模块> -q && mvn test-compile -pl <模块> -q`
+- 仅源代码编译通过但测试编译失败 → 阻断，标记 P0，必须修复
+- 原因：测试代码也是交付物的一部分，测试编译失败意味着测试与生产代码不同步
+
+### 🔴 Rule TEST-SYNC: 修复 P 级问题后必须验证测试用例同步 (新增)
+- **每次代码修复后**，R1 审查员必须额外检查：
+  1. 是否存在与修改代码对应的测试文件（按 `*Test.java` 命名约定查找）
+  2. 测试文件中的 mock/断言是否与代码变更一致（方法签名、参数、返回值）
+  3. 如果代码变更导致测试过时但测试未更新 → 补充 P1-HIGH 发现
+- **禁止**：只改生产代码不更新对应测试，导致测试编译失败或断言与实际行为不符
+- R3 裁定者最终确认：所有 P 级修复的对应测试已同步
 
 ### 🔴 Rule -2: 稳定版本管理 (不可跳过)
 - **当前稳定版本**: `v3.0-dag`, 备份于 `桌面/opencode-releases/v3.0-dag/`
@@ -447,6 +465,18 @@ Every sub-agent MUST return output in this format:
 - [ ] **Cost 汇总已加入 REPORT?** (按Step/按模型)
 - [ ] **Budget 检查？** (cumulative_usd <= budget_usd?)
 - [ ] **任何一项❌ → 立即补充 → 重新验证 → 直到全部✅**
+
+### Step `kb_emit`: 知识总线沉淀 (Pipeline 成功后)
+```
+调用: knowledge-bus-agent (mode=EMIT, source_pipeline=fix)
+沉淀内容:
+  - error_type + fix_approach (来自 analyze 输出)
+  - files_changed + patch (来自 fix 输出)
+  - review_findings (来自 r3 输出)
+  - K-series 命中情况
+异步执行: 不阻塞 verify，使用 agent call 后台提交
+失败: 仅记录警告，不影响 Pipeline 结果
+```
 
 ### Step `cost`: 成本追踪 (每步后自动执行)
 - [ ] 记录 token/API/cost → `~/.config/opencode/cost-log.jsonl`

@@ -1,12 +1,15 @@
 ---
+name: dev-harness
 description: Harness Engineering DAG v1. Full-stack development coordinator: PRD→Architecture→Design→Code→Test→Review→Deploy. Multi-agent parallel execution with self-review loops.
-mode: primary
-model: anthropic/claude-sonnet-4-6
-permission:
-  edit: allow
-  read: allow
-  bash: allow
-  task: allow
+tools:
+  read: true
+  write: true
+  bash: true
+  grep: true
+  find: true
+  ls: true
+  agent: true
+model: anthropic/claude-sonnet-4.6
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。
@@ -89,6 +92,7 @@ Layer 12:             [Final Verify]
 | `git_mr` | Git commit + push + MR 创建 | deploy-agent | `quality_gate` | 1 | ✅ |
 | `jira_update` | Jira 回填: description + worklog + comment | jira-agent | `git_mr` | 2 | ✅ |
 | `verify` | 最终验证 | dev-harness | `jira_update` | 2 | ✅ |
+| `kb_emit` | 知识总线沉淀: 开发模式 → knowledge-bus-agent (EMIT, async) | knowledge-bus-agent | `verify` | 1 | ❌ |
 
 ---
 
