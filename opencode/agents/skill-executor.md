@@ -1,12 +1,15 @@
 ---
+name: skill-executor
 description: Skill DAG Executor v1. 解析 DSL JSON → 拓扑排序 → 分层并行执行。stargate SkillOrchestrator 模式。
-mode: subagent
-model: anthropic/claude-sonnet-4-6
-permission:
-  read: allow
-  edit: allow
-  bash: allow
-  task: allow
+tools:
+  read: true
+  write: true
+  bash: true
+  grep: true
+  find: true
+  ls: true
+  agent: true
+model: anthropic/claude-sonnet-4.6
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。
@@ -70,7 +73,11 @@ dry_run:    dry_run 模式: 只验证不执行 (optional, default false)
     "chunks_consumed": 0,
     "timeout_seconds": 1800,
     "started_at": null,
-    "expires_at": null
+    "expires_at": null,
+    "context_tokens_budget": 150000,
+    "context_tokens_consumed": 0,
+    "context_compress_threshold": 0.80,
+    "context_compressed_count": 0
   },
   "layers": [],
   "step_states": {},
@@ -101,12 +108,47 @@ dry_run:    dry_run 模式: 只验证不执行 (optional, default false)
 
 ```
 for each layer in layers:
+    0. [Context Budget Check] ← 新增
+       context_ratio = context_tokens_consumed / context_tokens_budget
+       if context_ratio > context_compress_threshold (0.80):
+           插入 context-compressor-agent 压缩步骤
+           压缩完成后更新 context_tokens_consumed
+           context_compressed_count += 1
+           log: "⚠️ Context {context_ratio:.0%} → 自动压缩 (第{context_compressed_count}次)"
+
     1. 解析本层所有 step 的 ${refs} → 求值 when 条件
     2. 标记跳过的 step (when=false or 上游失败导致不可达)
     3. 并行执行本层所有 runnable step
     4. 等待本层全部完成
     5. 汇总结果: 检查 abort 信号、更新状态文件
+       更新 context_tokens_consumed (累加本层所有 step 的估算 token 消耗)
     6. 如有 abort → 停止
+```
+
+### 2.1a Context Budget 估算规则
+
+```
+每个 step 完成后，估算 token 消耗并累加到 context_tokens_consumed:
+
+step_type = llm_call:
+  consumed = len(system_prompt) / 4 + len(response) / 4 + 500 (overhead)
+
+step_type = mcp_tool:
+  consumed = len(tool_result) / 4 + 200
+
+step_type = sub_skill:
+  consumed = sub_skill.governance.context_tokens_consumed * 0.3 (压缩摘要)
+
+step_type = gate:
+  consumed = 100 (user interaction, minimal)
+
+自动压缩触发条件:
+  context_tokens_consumed > context_tokens_budget * context_compress_threshold
+  → 在下一层开始前插入 context-compressor-agent
+  → 压缩策略: 保留 head (Layer 0 输出) + tail (最近2层) + 压缩 middle
+  → 压缩后 context_tokens_consumed 重置为压缩后估算值
+
+最大压缩次数: 3次/execution (防止频繁压缩导致信息丢失)
 ```
 
 ### 2.2 引用解析器
