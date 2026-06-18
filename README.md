@@ -1,13 +1,13 @@
 # OpenCode Multi-Agent System
 
-[![Agents](https://img.shields.io/badge/Agents-49-blue)](./opencode/agents/)
+[![Agents](https://img.shields.io/badge/Agents-50-blue)](./opencode/agents/)
 [![Skills](https://img.shields.io/badge/Skills-32-green)](./opencode/skills/)
 [![Patterns](https://img.shields.io/badge/Patterns-21/21-brightgreen)](./agentic-architectures-analysis.md)
 [![Status](https://img.shields.io/badge/Status-Production-brightgreen)]()
 
-基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**49 个 Agent + 32 个 Skill + 5 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **21/21 种**。
+基于 [OpenCode](https://opencode.ai) 的生产级多 Agent 协作平台，**50 个 Agent + 32 个 Skill + 5 套 DAG 流水线**，覆盖 21 种 AI Agent 架构中 **21/21 种**。
 
-**v3.9 领域专家版**：api-perf/billing/data-migration/ops 四大领域 Agent 全面升级，语义路由 + CA传播 + Checkpoint断点续跑 + Sphere2对账。
+**v4.0 智能路由版**：多模型分级路由（haiku 分类/格式化 → sonnet 分析 → opus 终局裁决）+ knowledge-bus 跨管道知识总线，消除三大 Pipeline 知识孤岛。
 
 ---
 
@@ -41,7 +41,7 @@
 
 ```
 ├── opencode/                          ← ~/.config/opencode/
-│   ├── agents/      49 agents (v3.9)
+│   ├── agents/      50 agents (v4.0)
 │   ├── skills/      32 skills · 5 DAG
 │   ├── knowledge/   19 模式 + 3 SOP + 2 服务文档
 │   ├── rag/         ChromaDB 向量检索
@@ -183,7 +183,8 @@ AUTO_FIX (conf ≥ 0.85) / NEEDS_HUMAN (0.60-0.74) / ESCALATE (< 0.60)
 
 | 版本 | 日期 | 变更 |
 |:--:|------|------|
-| **v3.9** | **2026-06-18** | **领域专家升级: api-perf v2 + billing v2 + data-migration v3 + ops v2 — 49 Agents** |
+| **v4.0** | **2026-06-18** | **智能路由: haiku/sonnet/opus 分级 + knowledge-bus 跨管道知识总线 — 50 Agents** |
+| v3.9 | 2026-06-18 | 领域专家升级: api-perf v2 + billing v2 + data-migration v3 + ops v2 — 49 Agents |
 | v3.8 | 2026-06-18 | Cellular Automata 依赖传播扫描 — 21/21 架构模式全覆盖 |
 | v3.7 | 2026-05-29 | 代码审查 DAG: 三轮对抗式审查 + CI 编译门禁 + 链式 API 盲区预防 |
 | v3.6 | 2026-05-28 | 知识图谱(62节点112边) + 对话向量记忆 + 21服务文档扫描 |
