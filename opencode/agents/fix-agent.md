@@ -1,11 +1,14 @@
 ---
+name: fix-agent
 description: Code fix agent v4. Applies fixes with before/after diff, self-review confidence, iterative revision loop, and security scan before dangerous edits.
-mode: subagent
-model: anthropic/claude-sonnet-4-6
-permission:
-  edit: allow
-  read: allow
-  bash: allow
+tools:
+  read: true
+  write: true
+  bash: true
+  grep: true
+  find: true
+  ls: true
+model: anthropic/claude-sonnet-4.6
 ---
 
 > 🔒 **规则锁定**: 本文件所有规则、模板、流程均为强制固定，不可变更。仅在用户明确指令"优化规则"时方可修改。
@@ -170,6 +173,35 @@ pipeline:
    ├─ SimDetailServiceImpl.java → ✅ 安全
    ├─ LeoScmFeignServiceImpl.java → ✅ 安全
    └─ EsSimUpdateTask.java → ✅ 安全
+```
+
+### Step 0.5: Bus Hint Consume (v4.1 新增)
+
+analyze-agent 输出的 `data.analysis[].memory_hit.recall_source` 若以 `"bus:"` 开头，说明该修复方案来自知识总线，已有跨 Pipeline 历史验证：
+
+```
+for each fix in analysis_input.analysis:
+  if fix.memory_hit.recall_source starts_with "bus:":
+    → bus_hint = true
+    → 直接使用 fix.fix_approach + code_snippet 作为修复模板
+    → 跳过 Step 1 Mental Simulation（历史验证过，无需再模拟）
+    → confidence 继承 analyze-agent 已加成值（不额外降）
+    → 在 fixed_files[].diff_summary 末尾标注 "[bus:{unit_id}]"
+
+非 bus_hint 修复 → 正常走 Step 1 → Step 1.5 流程
+
+执行顺序:
+  bus_hint 修复: Step 0 → Step 0.5 → Step 2(read) → Step 3(apply) → Step 4(review)
+  普通修复:      Step 0 → Step 1(sim) → Step 1.5(metacog) → Step 2 → Step 3 → Step 4
+```
+
+输出新增字段：
+```json
+"fixed_files": [{
+  "bus_hint_applied": true,
+  "bus_unit_id": "KB-2026-0618-001",
+  "simulation_skipped": true
+}]
 ```
 
 ### Step 1: Mental Simulation (v4 新增 — 仅高风险修复)

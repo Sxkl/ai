@@ -41,6 +41,33 @@ model: anthropic/claude-haiku-4-5-20251001
 用户说 `--dry-run` 时只输出分类结果表格，不执行任何 pipeline，不修改 Jira 状态。
 用于在真正执行前确认分类是否正确。
 
+## Step 0: KB Bus 预查 (路由前置，异步不阻塞)
+
+在获取 Jira 详情前，先提取 service hint 并查询知识总线：
+
+```
+service_hint 提取:
+  Jira Key → 从 Key 前缀猜测 (PR-xxxx → 默认 iot-order)
+  自然语言 → 提取服务名关键词 (cube-server / sim-service / ...)
+  labels/summary → 精确提取 (仅批量模式 Step 1 完成后再补充)
+
+调用: knowledge-bus-agent(mode=inject, context={service: service_hint})
+→ 返回 Top-5 近期跨 Pipeline 记录
+
+使用规则:
+  近7天有 P0 fix 记录 (source_pipeline=fix, confidence>0.9):
+    → 路由结果表格加 "⚠️ 近期有相关修复" 标注
+    → 在 Jira comment 附加: "📚 知识总线提示: {unit.title} ({unit.last_seen})"
+
+  近期同 service 有 review 记录且 P0 findings 存在:
+    → 加 "⚠️ 同 service 有未解决 P0 审查问题" 标注
+    → 路由 coordinator 时附带 kb_inject_output 供 analyze-agent 使用
+
+  bus_hits == 0 → 跳过, 正常路由
+
+bus 预查失败 → 记录 warning，不阻塞路由
+```
+
 ## Step 1: 获取 Jira 信息（如果是 Key）
 
 ```
