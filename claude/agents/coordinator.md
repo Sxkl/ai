@@ -19,8 +19,8 @@ model: anthropic/claude-sonnet-4.6
 ## Step Dependency Graph (DAG)
 
 ```
-Layer 0 (parallel):     [Git Prep] ───────╮        [SLS Scan] ──────╮
-                        no deps           │        no deps          │
+Layer 0 (parallel):     [Git Prep] ───────╮  [SLS Scan] ──────╮  [KB Inject] ──╮
+                        no deps           │  no deps          │  no deps       │
                                           ↓                         ↓
 Layer 1 (parallel):     [Jira Create]     │        [DB Check]       │
                         depends_on: git   │   depends_on: sls       │
@@ -66,6 +66,7 @@ Per-Step (always):               [Cost Tracker]                        │
 
 | step_id | step_name | agent | depends_on | max_retry | on_failure | mandatory | condition |
 |---------|-----------|-------|------------|-----------|------------|:--:|-----------|
+| `kb_inject` | 知识总线注入: 历史修复/审查知识 → Top-5 注入 analyze-agent | knowledge-bus-agent | — | 1 | CONTINUE | ❌ | — |
 | `git` | Git 准备 + 分支创建 | io-agent | — | 2 | ABORT | ✅ | — |
 | `sls` | SLS GetHistograms + GetLogsV2 (ERROR + Exception) | sls-agent | — | 3 | ABORT | ✅ | — |
 | `jira` | Jira 创建(完整模板) + assignee + timetracking + transition 351 | jira-agent | `git` | 2 | ABORT | ✅ | — |
@@ -465,6 +466,15 @@ Every sub-agent MUST return output in this format:
 - [ ] **Cost 汇总已加入 REPORT?** (按Step/按模型)
 - [ ] **Budget 检查？** (cumulative_usd <= budget_usd?)
 - [ ] **任何一项❌ → 立即补充 → 重新验证 → 直到全部✅**
+
+### Step `kb_inject`: 知识总线注入 (Layer 0 并行，异步不阻塞)
+```
+调用: knowledge-bus-agent (mode=INJECT, target_pipeline=fix)
+context: { service, error_types: [] (初始为空，sls 完成后补充), files_changed: [] }
+返回: Top-5 相关历史知识单元
+用途: 注入 analyze-agent 的 system context，作为"已知模式提示"
+注意: kb_inject 失败不阻塞 git/sls，仅记录警告
+```
 
 ### Step `kb_emit`: 知识总线沉淀 (Pipeline 成功后)
 ```

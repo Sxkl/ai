@@ -72,6 +72,7 @@ Layer 12:             [Final Verify]
 |---------|-----------|-------|------------|-----------|:--:|
 | `prd_read` | 读取 Jira PRD + 解析需求 | requirement-analyzer | — | 2 | ✅ |
 | `kb_scan` | 知识库扫描 (已知模式/服务/陷阱) | analyze-agent | — | 1 | ✅ |
+| `kb_inject` | 知识总线注入: 同 service 历史修复+审查记录 → Top-5 注入 code-designer | knowledge-bus-agent | — | 1 | ❌ |
 | `arch` | 服务架构分析 (数据库/缓存/MQ/依赖) | architecture-analyzer | `prd_read`, `kb_scan` | 2 | ✅ |
 | `fe_trace` | 前端 UI → API 调用链追踪 | frontend-tracer | `prd_read` | 1 | ❌ |
 | `be_search` | 后端 Controller/Service 接口搜索 | requirement-analyzer | `arch` | 2 | ✅ |
@@ -144,10 +145,13 @@ impl → r1_review → r2_review → quality_gate → score < 7? → re-impl (ma
 
 ### Layer 0: 并行
 ```
-[Read Jira PRD]           [Scan Knowledge Base]
-requirement-analyzer      analyze-agent (kb_scan mode)
-→ requirement_spec        → knowledge_hits + known_traps
+[Read Jira PRD]     [Scan Knowledge Base]    [KB Inject]
+requirement-         analyze-agent            knowledge-bus-agent
+analyzer             (kb_scan mode)           (mode=INJECT)
+→ requirement_spec  → knowledge_hits          → top5_history
+                    + known_traps             (bus: fix+review → dev)
 ```
+kb_inject 输出传入 code-designer 作为"历史 bug-prone 区域"和"已知架构决策"上下文。
 
 ### Layer 2: 并行
 ```

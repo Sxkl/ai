@@ -26,6 +26,10 @@ Step 1: 准备阶段
   - 获取 MR diff 和变更文件列表（git diff origin/<base>...HEAD）
   - 确定审查基线（master/develop）
   - 收集上下文（需求文档、技术方案）
+  - **知识注入**: 调用 knowledge-bus-agent (mode=INJECT, target_pipeline=review)
+    context: { service, files_changed }
+    → 返回 Top-5 历史知识，作为 R2-Challenger 和 R3-Arbiter 的参考背景
+    → 历史 P0 模式注入 R3，防止漏报；历史误报模式注入 R2，防止重复误报
 
 Step 2: R1 审查员 → 调用 R1-Reviewer agent
   - 传入：变更文件列表 + 完整 diff + 基线分支
